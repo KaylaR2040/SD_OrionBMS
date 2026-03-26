@@ -1,0 +1,10 @@
+# MACOS
+.DS_Store
+
+# Build files
+.pio/*
+build/
+out/
+
+# IDE files
+.vscode/
