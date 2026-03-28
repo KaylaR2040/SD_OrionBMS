@@ -21,7 +21,7 @@
 
 /* Focused CAN diagnostics: default on, but throttled to stay lightweight. */
 #define CAN_DEBUG_STREAM_DEFAULT    1
-#define CAN_DEBUG_LOG_THROTTLE_MS   1000u
+#define CAN_DEBUG_LOG_THROTTLE_MS   2000u
 
 /* Orion thermistor expansion IDs derived from target address + source address. */
 #define THERM_J1939_CLAIM_ID       (0x18EEFF00u | (uint32_t)ORION_THERM_SOURCE_ADDR)

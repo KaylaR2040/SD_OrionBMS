@@ -12,6 +12,8 @@ void CAN_Debug_SetMode(bool enabled);
 bool CAN_Debug_IsEnabled(void);
 void CAN_Debug_SetStreamEnabled(bool enabled);
 bool CAN_Debug_IsStreamEnabled(void);
+void CAN_Debug_SetDualModuleEmulation(bool enabled);
+bool CAN_Debug_IsDualModuleEmulationEnabled(void);
 
 /* Manual override hook (hard-coded table inside can_debugging.c) */
 void CAN_Debug_ApplyManualOverrides(void);

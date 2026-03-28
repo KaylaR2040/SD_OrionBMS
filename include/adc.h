@@ -23,6 +23,10 @@ extern "C" {
 
 #define ADC_APP_CHANNEL_COUNT 10U
 
+/* Shared ADC constants for voltage/count conversions. */
+#define ADC_MAX_COUNTS 4095U
+#define ADC_REF_MV     3300U
+
 extern ADC_HandleTypeDef hadc1;
 
 void ADC_App_Init(void);

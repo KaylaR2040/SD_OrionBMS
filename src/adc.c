@@ -16,8 +16,8 @@
 #define ADC_SETTLE_DELAY_ITERS     64U
 
 
-#define ADC_MAX_COUNTS             4095U
-#define ADC_REF_MV                 3300U
+/* Moved to adc.h so other modules (e.g., CAN logging) can reuse. */
+#include "adc.h"
 
 /*
  * ADC sampling math:
@@ -149,15 +149,16 @@ void ADC_App_LogSnapshot(void)
         const uint32_t volts_whole = millivolts / 1000U;
         const uint32_t volts_frac = millivolts % 1000U;
         /* Each channel line shows ID, pin, and computed voltage in volts. */
-        LOG_INFO("  %sCH%-2lu%s %-5s %s%lu.%03lu V%s",
-                 LOG_COLOR_FIELD,
-                 (unsigned long)channel_ids[i],
-                 LOG_COLOR_RESET,
-                 channel_pins[i],
-                 LOG_COLOR_VALUE,
-                 (unsigned long)volts_whole,
-                 (unsigned long)volts_frac,
-                 LOG_COLOR_RESET);
+        LOG_INFO("  %s%-2lu%s %-5s %5lu cnt %s%lu.%03lu V%s",
+             LOG_COLOR_FIELD,
+             (unsigned long)(i + 1U),
+             LOG_COLOR_RESET,
+             channel_pins[i],
+             (unsigned long)samples[i],
+             LOG_COLOR_VALUE,
+             (unsigned long)volts_whole,
+             (unsigned long)volts_frac,
+             LOG_COLOR_RESET);
     }
     /* Spacer to separate ADC output from subsequent task logs. */
     LOG_INFO("\n");
@@ -188,12 +189,13 @@ static void ADC_LogCachedSnapshot(void)
         const uint32_t volts_frac = millivolts % 1000U;
         const int temp_c = (int)Thermistor_ADCToTemp(sample);
 
-        LOG_INFO("  CH%-2lu %-5s %lu.%03lu V %dC",
-                 (unsigned long)channel_ids[i],
-                 channel_pins[i],
-                 (unsigned long)volts_whole,
-                 (unsigned long)volts_frac,
-                 temp_c);
+        LOG_INFO("  %-2lu %-5s %5u cnt %lu.%03lu V %dC",
+             (unsigned long)(i + 1U),
+             channel_pins[i],
+             (unsigned)sample,
+             (unsigned long)volts_whole,
+             (unsigned long)volts_frac,
+             temp_c);
     }
 }
 
@@ -227,6 +229,13 @@ void ADC_ServiceTask(void)
 
         ConvertAllThermistors(g_can_ctx.thermistors.thermistor_adc_values,
                               g_can_ctx.thermistors.num_active);
+
+#if ADC_ENABLE_PERIODIC_LOG
+        if ((int32_t)(now_ms - g_adc_next_log_ms) >= 0) {
+            ADC_LogCachedSnapshot();
+            g_adc_next_log_ms = now_ms + ADC_LOG_PERIOD_MS;
+        }
+#endif
 
         g_adc_next_sample_ms = now_ms + ADC_SAMPLE_PERIOD_MS;
     }

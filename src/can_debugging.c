@@ -12,6 +12,7 @@
 
 static bool s_debug_mode = false;
 static bool s_stream_enabled = (CAN_DEBUG_STREAM_DEFAULT != 0);
+static bool s_dual_module_emulation_enabled = false;
 static CAN_DebugSnapshot_t s_dbg = {0};
 static bool s_log_claim_pending = false;
 static bool s_log_bms_pending = false;
@@ -20,9 +21,18 @@ static uint32_t s_log_claim_last_ms = 0;
 static uint32_t s_log_bms_last_ms = 0;
 static uint32_t s_log_gen_last_ms = 0;
 
-#define LOG_MIN_CLAIM_INTERVAL_MS 400U
-#define LOG_MIN_BMS_INTERVAL_MS   400U
-#define LOG_MIN_GEN_INTERVAL_MS   400U
+#define LOG_MIN_CLAIM_INTERVAL_MS CAN_DEBUG_LOG_THROTTLE_MS
+#define LOG_MIN_BMS_INTERVAL_MS   CAN_DEBUG_LOG_THROTTLE_MS
+#define LOG_MIN_GEN_INTERVAL_MS   CAN_DEBUG_LOG_THROTTLE_MS
+#define LOG_MIN_DUAL_MODE_MS      100u
+
+static uint32_t Debug_LogMinInterval(uint32_t default_interval_ms)
+{
+    if (CAN_Debug_IsDualModuleEmulationEnabled()) {
+        return LOG_MIN_DUAL_MODE_MS;
+    }
+    return default_interval_ms;
+}
 
 typedef struct {
     uint16_t temp_override_mask;
@@ -61,6 +71,7 @@ void CAN_Debug_Clear(void)
 {
     memset(&s_debug, 0, sizeof(s_debug));
     memset(&s_dbg, 0, sizeof(s_dbg));
+    s_dual_module_emulation_enabled = false;
     s_log_claim_pending = false;
     s_log_bms_pending = false;
     s_log_gen_pending = false;
@@ -90,6 +101,16 @@ bool CAN_Debug_IsStreamEnabled(void)
     return s_stream_enabled;
 }
 
+void CAN_Debug_SetDualModuleEmulation(bool enabled)
+{
+    s_dual_module_emulation_enabled = enabled;
+}
+
+bool CAN_Debug_IsDualModuleEmulationEnabled(void)
+{
+    return s_dual_module_emulation_enabled;
+}
+
 /* ---------------------------------------------------------------------------
  * Manual overrides (DEV WORK HERE - add hard-coded overrides)
  NOTE: MANUAL OVERRIDE HERE
@@ -99,8 +120,11 @@ void CAN_Debug_ApplyManualOverrides(void)
 {
     CAN_Debug_Clear();
 
-    /* Fault: NONE - force all thermistors to 25C */
-    CAN_Debug_All_TempOverride(25);
+    /* DEBUG TEST MODE: emulate two modules (0x80 + 0x81), 5 thermistors each. */
+    CAN_Debug_SetDualModuleEmulation(true);
+
+    /* Live ADC test: keep real sensor values (no forced temperature override). */
+    // CAN_Debug_All_TempOverride(25);
 
     /* Fault: Pack TOO HOT*/
     //CAN_Debug_All_TempOverride(85);
@@ -284,12 +308,13 @@ void CAN_Debug_TryLogClaim(void)
     }
 
     const uint32_t now_ms = HAL_GetTick();
-    if ((now_ms - s_log_claim_last_ms) < LOG_MIN_CLAIM_INTERVAL_MS) {
+    if ((now_ms - s_log_claim_last_ms) < Debug_LogMinInterval(LOG_MIN_CLAIM_INTERVAL_MS)) {
         return;
     }
 
+    const uint32_t claim_id = 0x18EEFF00u | (uint32_t)s_dbg.source_addr;
     LOG_DEBUG("TX 0x%08lX dt=%lums module=%u target=0x%02X [%02X %02X %02X %02X %02X %02X %02X %02X]",
-              (unsigned long)THERM_J1939_CLAIM_ID,
+              (unsigned long)claim_id,
               (unsigned long)s_dbg.last_claim_interval_ms,
               s_dbg.module_index,
               s_dbg.bms_target_addr,
@@ -309,12 +334,13 @@ void CAN_Debug_TryLogBms(void)
     }
 
     const uint32_t now_ms = HAL_GetTick();
-    if ((now_ms - s_log_bms_last_ms) < LOG_MIN_BMS_INTERVAL_MS) {
+    if ((now_ms - s_log_bms_last_ms) < Debug_LogMinInterval(LOG_MIN_BMS_INTERVAL_MS)) {
         return;
     }
 
+    const uint32_t bms_id = 0x18390000u | ((uint32_t)s_dbg.bms_target_addr << 8) | (uint32_t)s_dbg.source_addr;
     LOG_DEBUG("TX 0x%08lX bms dt=%lums module=%u low=%d high=%d avg=%d en=%u valid=%u fault=%u hi_id=%u lo_id=%u csum=0x%02X [%02X %02X %02X %02X %02X %02X %02X %02X]",
-              (unsigned long)THERM_BMS_BROADCAST_ID,
+              (unsigned long)bms_id,
               (unsigned long)s_dbg.last_bms_interval_ms,
               s_dbg.module_index,
               (int)s_dbg.min_temp_c,
@@ -342,7 +368,7 @@ void CAN_Debug_TryLogGeneral(void)
     }
 
     const uint32_t now_ms = HAL_GetTick();
-    if ((now_ms - s_log_gen_last_ms) < LOG_MIN_GEN_INTERVAL_MS) {
+    if ((now_ms - s_log_gen_last_ms) < Debug_LogMinInterval(LOG_MIN_GEN_INTERVAL_MS)) {
         return;
     }
 
@@ -350,8 +376,9 @@ void CAN_Debug_TryLogGeneral(void)
     const uint8_t idx = s_dbg.last_general_local_id;
     const unsigned fault = (unsigned)((fault_mask & (uint16_t)(1u << idx)) != 0u);
 
+    const uint32_t general_id = 0x18380000u | ((uint32_t)s_dbg.bms_target_addr << 8) | (uint32_t)s_dbg.source_addr;
     LOG_DEBUG("TX 0x%08lX gen dt=%lums global_id=%u local_id=%u fault=%u temp=%d low=%d high=%d hi_id=%u lo_id=%u [%02X %02X %02X %02X %02X %02X %02X %02X]",
-              (unsigned long)THERM_GENERAL_BROADCAST_ID,
+              (unsigned long)general_id,
               (unsigned long)s_dbg.last_general_interval_ms,
               (unsigned)s_dbg.last_general_global_id,
               s_dbg.last_general_local_id,
@@ -426,9 +453,13 @@ void CAN_DebugPrintFaultState(void)
 
 void CAN_DebugPrintCanSnapshot(void)
 {
+    const uint32_t claim_id = 0x18EEFF00u | (uint32_t)s_dbg.source_addr;
+    const uint32_t bms_id = 0x18390000u | ((uint32_t)s_dbg.bms_target_addr << 8) | (uint32_t)s_dbg.source_addr;
+    const uint32_t general_id = 0x18380000u | ((uint32_t)s_dbg.bms_target_addr << 8) | (uint32_t)s_dbg.source_addr;
+
     LOG_INFO("CAN SNAPSHOT (last sent)");
     LOG_INFO("  Claim 0x%08lX interval=%lums source=0x%02X target=0x%02X module=%u [%02X %02X %02X %02X %02X %02X %02X %02X]",
-             (unsigned long)THERM_J1939_CLAIM_ID,
+             (unsigned long)claim_id,
              (unsigned long)s_dbg.last_claim_interval_ms,
              s_dbg.source_addr,
              s_dbg.bms_target_addr,
@@ -436,7 +467,7 @@ void CAN_DebugPrintCanSnapshot(void)
              s_dbg.claim[0], s_dbg.claim[1], s_dbg.claim[2], s_dbg.claim[3],
              s_dbg.claim[4], s_dbg.claim[5], s_dbg.claim[6], s_dbg.claim[7]);
     LOG_INFO("  BMS   0x%08lX interval=%lums module=%u low=%d high=%d avg=%d enabled=%u valid=%u fault=%u hi_id=%u lo_id=%u checksum=0x%02X [%02X %02X %02X %02X %02X %02X %02X %02X]",
-             (unsigned long)THERM_BMS_BROADCAST_ID,
+             (unsigned long)bms_id,
              (unsigned long)s_dbg.last_bms_interval_ms,
              s_dbg.module_index,
              (int)s_dbg.min_temp_c,
@@ -451,7 +482,7 @@ void CAN_DebugPrintCanSnapshot(void)
              s_dbg.bms[0], s_dbg.bms[1], s_dbg.bms[2], s_dbg.bms[3],
              s_dbg.bms[4], s_dbg.bms[5], s_dbg.bms[6], s_dbg.bms[7]);
     LOG_INFO("  GEN   0x%08lX interval=%lums global_id=%u local_id=%u fault=%u temp=%d low=%d high=%d hi_id=%u lo_id=%u [%02X %02X %02X %02X %02X %02X %02X %02X]",
-             (unsigned long)THERM_GENERAL_BROADCAST_ID,
+             (unsigned long)general_id,
              (unsigned long)s_dbg.last_general_interval_ms,
              (unsigned)s_dbg.last_general_global_id,
              s_dbg.last_general_local_id,
