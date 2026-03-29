@@ -48,8 +48,7 @@ void SystemClock_Config(void)
     osc.PLL.PLLR = RCC_PLLR_DIV2;
     osc.PLL.PLLQ = RCC_PLLQ_DIV2;
     osc.PLL.PLLP = RCC_PLLP_DIV7;
-    if (HAL_RCC_OscConfig(&osc) != HAL_OK) 
-    {
+    if (HAL_RCC_OscConfig(&osc) != HAL_OK) {
         Error_Handler();
     }
 

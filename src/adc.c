@@ -46,7 +46,7 @@ static uint32_t g_adc_next_log_ms = 0U;
 
 static void ADC_DelayForSettling(void);
 static HAL_StatusTypeDef ADC_PerformConversion(uint16_t *result);
-static void ADC_LogCachedSnapshot(void);
+void ADC_LogCachedSnapshot(void);
 
 /* Initialize the STM32G4 on-chip ADC */
 void ADC_App_Init(void)
@@ -164,8 +164,9 @@ void ADC_App_LogSnapshot(void)
     LOG_INFO("\n");
 }
 
-static void ADC_LogCachedSnapshot(void)
-{
+
+void ADC_LogCachedSnapshot(void)
+{// Removed Static Keywork to ensure this isn't cached when function isn't in use.
     const uint32_t channel_ids[ADC_APP_CHANNEL_COUNT] = {
         1, 2, 5, 6, 7, 8, 9, 11, 14, 15
     };

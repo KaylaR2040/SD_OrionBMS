@@ -10,24 +10,44 @@
 
 #include "master.h"
 
-bool bq_is_active;
-
 int main(void)
 {
     System_AppInit();
 
-    (void)BQ_WakeAndInit(BQ_STACK_COUNT);
-    LED_All_Pulse(100u);
+    int bq_status;
+    // bool bq_is_active = false;
 
-    bq_is_active = BQ_ServiceTask();
+     /* WAKE SEQUENCE */
+    if((bq_status = BQ_Wake(BQ_STACK_COUNT)) != 0) {
+        LOG_ERROR("BQ_Wake failed: bq_status=%d", bq_status);
+        Error_Handler();
+    }
+
+
+    // Auto Addressing is Skipped because we interface with BQ79616 directly (using isolated UART Logic Level Shifter [3.3V - 5.0V]) instead of using BQ79600
+    // Use Device's Default Address: 0x01
+    
+    // bq_is_active = BQ_ServiceTask();
+
+
+    uint8_t partid = 0u;
+    bq_status = bq79616_read_partid_once(&partid);
+    if (bq_status != 0) {
+        LOG_ERROR("Initial PARTID read failed: bq_status=%d", bq_status);
+        Error_Handler();
+    }
+
+    LOG_INFO("Initial PARTID read success (0x%02X). Communication verified.", partid);
+    LED_All_Pulse(1000u);
+
     
     while (true) {
-        if (bq_is_active) {
-            bq_is_active = BQ_ServiceTask();
-        }
+        // if (bq_is_active) {
+        //     bq_is_active = BQ_ServiceTask();
+        // }
         
-        CAN_ServiceTask();
-        ADC_ServiceTask();
+        // CAN_ServiceTask();
+        // ADC_ServiceTask();
     }
 }
 

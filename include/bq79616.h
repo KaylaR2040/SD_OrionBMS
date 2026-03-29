@@ -23,8 +23,6 @@
 #include <stdint.h>
 #include <stddef.h>
 
-/* ------------------------- Register definitions ------------------------- */
-
 #include "B0_reg.h"
 
 #define BQ_CONTROL1_SEND_WAKE_MASK    (1u << 5)   /* CONTROL1[SEND_WAKE] */
@@ -48,9 +46,23 @@
 #define BQ_WAKE_ACTIVE_DELAY_US       3500u   /* bridge ACTIVE entry after pings */
 #define BQ_WAKE_PROP_DELAY_US_PER_DEV 11600u  /* 11.6 ms per stacked device */
 
+/* ------------------------- Device Addressing ------------------------------ */
+#define BQ_DUMMY_VALUE  0x00u
+#define BQ_ENABLE_CONTROL1 0x00u
+#define BQ_COMM_CTRL_VALUE 0x02u
+#define BQ_TOP_OF_STACK_VALUE 0x03u
+#define DEVICE_ADDR 0x01u
+#define DEV_CONF1 0x2001u // DEVCONF=0x02, REG_ADDR=0x001, word address 0x2001
+#define BRIDGE_FAULT_RST 0x2030
+#define BQ_WAKE_POST_DELAY_US  5000u
+
+/* Direct bring-up helpers */
+#define BQ_PARTID_EXPECTED       0x21u
+#define BQ_PARTID_REG            PARTID
+#define BQ_SINGLE_READ_FRAME_LEN 7u
 typedef int32_t BQ_Status_t;
 
-int BQ_WakeAndInit(uint8_t stack_count);
+int BQ_Wake(uint8_t stack_count);
 
 int bq79616_init(void);
 
@@ -78,16 +90,25 @@ int bq79616_transact(uint8_t dev_id,
                      uint8_t rx_len);
 
 uint16_t bq79616_crc16(const uint8_t *data, uint16_t len);
+uint16_t bq_crc16_ibm(const uint8_t *data, uint16_t len);
+void bq_log_hex(const char *label, const uint8_t *buf, size_t len);
+
+int bq79616_build_single_read_frame(uint16_t reg_addr,
+                                    uint8_t n_minus_1,
+                                    uint8_t *out,
+                                    size_t out_max,
+                                    size_t *out_len);
+int bq79616_read_partid_once(uint8_t *partid_out);
 
 int bq79616_get_part_id(uint8_t *part_id);
 
 void BQ79616_wake_ping(void);
-void BQ79616_wake_sequence(void);
 BQ_Status_t BQ_WakeSequence(uint8_t stack_count);
-int BQ_WakeAndInit(uint8_t stack_count);
+
+
+
 int bq79616_stack_single_init(void);
 
-void BQ79616_uart_smoke_test(void);
 
 /* Read cell voltage (keeps device alive via periodic UART communication) */
 int BQ79616_read_cell_voltage(uint8_t dev_addr, uint8_t cell_channel, uint16_t *voltage_mv);
@@ -99,5 +120,18 @@ int bq7961x_broadcast_write(uint16_t reg_addr,
                             uint32_t timeout_ms);
 
 bool BQ_ServiceTask(void);
+
+/* ----------------------- BQ Interfacing Functions ----------------------- */
+int bq_uart_tx(const uint8_t *buf, uint16_t len, uint32_t timeout_ms);
+int bq_uart_rx(uint8_t *buf, uint16_t len, uint32_t timeout_ms);
+int bq_uart_txrx(const uint8_t *tx, uint16_t tx_len, uint8_t *rx, uint16_t rx_len, uint32_t timeout_ms);
+int bq_uart_reinit(void);
+int bq7961x_single_write(uint8_t dev_addr, uint16_t reg_addr, const uint8_t *data, uint8_t len, uint32_t timeout_ms);
+int bq7961x_single_read(uint8_t dev_addr, uint16_t reg_addr, uint8_t *out, uint8_t len, uint32_t timeout_ms);
+int bq7961x_stack_read(uint8_t dev_addr, uint16_t reg_addr, uint8_t *out, uint8_t len, uint32_t timeout_ms);
+int bq7961x_broadcast_write_consecutive(uint16_t reg_addr, uint8_t stack_count, uint32_t timeout_ms);
+int bq7961x_stack_write(uint16_t reg_addr, const uint8_t *data, uint8_t len, uint32_t timeout_ms);
+int BQ_Reset_Comms(uint8_t data, uint32_t timeout_ms);
+
 
 #endif /* BQ79616_H */
