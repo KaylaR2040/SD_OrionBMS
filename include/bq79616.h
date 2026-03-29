@@ -54,7 +54,7 @@
 #define DEVICE_ADDR 0x01u
 #define DEV_CONF1 0x2001u // DEVCONF=0x02, REG_ADDR=0x001, word address 0x2001
 #define BRIDGE_FAULT_RST 0x2030
-#define BQ_WAKE_POST_DELAY_US  5000u
+#define BQ_WAKE_POST_DELAY_US  10000u // 10mS - per Datasheet (pg. 17), wait after wake pulse before UART traffic
 
 /* Direct bring-up helpers */
 #define BQ_PARTID_EXPECTED       0x21u

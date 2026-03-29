@@ -104,11 +104,11 @@ int BQ_Wake(uint8_t stack_count)
         return (int)wake_bq_status;
     }
 
-    int init_bq_status = bq79616_stack_single_init();
-    if (init_bq_status != 0) {
-        LOG_ERROR("Stack init failed: bq_status=%d", init_bq_status);
-        return init_bq_status;
-    }
+    // int init_bq_status = bq79616_stack_single_init();
+    // if (init_bq_status != 0) {
+    //     LOG_ERROR("Stack init failed: bq_status=%d", init_bq_status);
+    //     return init_bq_status;
+    // }
 
     HAL_Delay(1000u); 
     return 0;
@@ -129,10 +129,27 @@ void BQ79616_wake_ping(void){
     }
 }
 
-/* Backward-compatible wrapper: assumes single board */
-void BQ79616_wake_sequence(void)
+BQ_Status_t bq79616_direct_wake(void)
 {
-    (void)BQ_WakeSequence(1u);
+    LOG_INFO("\n=== WAKE SEQUENCE TEST ===");
+    LOG_INFO("Starting direct UART wake");
+
+    HAL_UART_DeInit(&uart_bq79616);
+
+    bq_pin_tx_to_gpio();
+    bq_pin_tx_set(GPIO_PIN_SET);
+
+    bq_drive_wake_pulse(BQ_WAKE_PULSE_US);
+
+    bq_delay_us(BQ_WAKE_POST_DELAY_US);
+
+    if (bq_uart_reinit() != 0) {
+        LOG_ERROR("UART reinit failed after wake");
+        return -1;
+    }
+
+    LOG_INFO("Direct UART wake complete");
+    return 0;
 }
 
 /* Full UART wake sequence: two pulses, bridge ACTIVE wait, SEND_WAKE */
@@ -163,9 +180,6 @@ BQ_Status_t BQ_WakeSequence(uint8_t stack_count)
 
     LOG_INFO("Driving wake pulse 2");
     bq_drive_wake_pulse(BQ_WAKE_PULSE_US);
-
-    /* Allow bridge to enter ACTIVE state before UART traffic */
-    bq_delay_us(BQ_WAKE_ACTIVE_DELAY_US);
 
     LOG_INFO("Reinitializing UART");
     if (bq_uart_reinit() != 0) {

@@ -18,7 +18,7 @@ int main(void)
     // bool bq_is_active = false;
 
      /* WAKE SEQUENCE */
-    if((bq_status = BQ_Wake(BQ_STACK_COUNT)) != 0) {
+    if((bq_status = bq79616_direct_wake()) != 0) {
         LOG_ERROR("BQ_Wake failed: bq_status=%d", bq_status);
         Error_Handler();
     }
@@ -30,15 +30,15 @@ int main(void)
     // bq_is_active = BQ_ServiceTask();
 
 
-    uint8_t partid = 0u;
-    bq_status = bq79616_read_partid_once(&partid);
-    if (bq_status != 0) {
-        LOG_ERROR("Initial PARTID read failed: bq_status=%d", bq_status);
-        Error_Handler();
-    }
+    // uint8_t partid = 0u;
+    // bq_status = bq79616_read_partid_once(&partid);
+    // if (bq_status != 0) {
+    //     LOG_ERROR("Initial PARTID read failed: bq_status=%d", bq_status);
+    //     Error_Handler();
+    // }
 
-    LOG_INFO("Initial PARTID read success (0x%02X). Communication verified.", partid);
-    LED_All_Pulse(1000u);
+    // LOG_INFO("Initial PARTID read success (0x%02X). Communication verified.", partid);
+    // LED_All_Pulse(1000u);
 
     
     while (true) {
