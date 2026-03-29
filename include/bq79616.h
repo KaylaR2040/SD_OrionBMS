@@ -53,14 +53,12 @@
 #define BQ_TOP_OF_STACK_VALUE 0x03u
 #define DEVICE_ADDR 0x01u
 #define DEV_CONF1 0x2001u // DEVCONF=0x02, REG_ADDR=0x001, word address 0x2001
-#define BRIDGE_FAULT_RST 0x2030
 #define BQ_WAKE_POST_DELAY_US  10000u // 10mS - per Datasheet (pg. 17), wait after wake pulse before UART traffic
 
 /* Direct bring-up helpers */
 #define BQ_PARTID_EXPECTED       0x21u
 #define BQ_PARTID_REG            PARTID
 #define BQ_SINGLE_READ_FRAME_LEN 7u
-typedef int32_t BQ_Status_t;
 
 int BQ_Wake(uint8_t stack_count);
 
@@ -70,17 +68,6 @@ int bq79616_write(uint8_t dev_id,
                   uint16_t reg_addr,
                   const uint8_t *data,
                   uint8_t len);
-
-int bq79616_read(uint8_t dev_id,
-                 uint16_t reg_addr,
-                 uint8_t *out,
-                 uint8_t len);
-
-int bq79616_read_timeout(uint8_t dev_id,
-                         uint16_t reg_addr,
-                         uint8_t *out,
-                         uint8_t len,
-                         uint32_t timeout_ms);
 
 int bq79616_transact(uint8_t dev_id,
                      uint16_t reg_addr,
@@ -103,7 +90,7 @@ int bq79616_read_partid_once(uint8_t *partid_out);
 int bq79616_get_part_id(uint8_t *part_id);
 
 void BQ79616_wake_ping(void);
-BQ_Status_t BQ_WakeSequence(uint8_t stack_count);
+int BQ_WakeSequence(uint8_t stack_count);
 
 
 
@@ -132,6 +119,7 @@ int bq7961x_stack_read(uint8_t dev_addr, uint16_t reg_addr, uint8_t *out, uint8_
 int bq7961x_broadcast_write_consecutive(uint16_t reg_addr, uint8_t stack_count, uint32_t timeout_ms);
 int bq7961x_stack_write(uint16_t reg_addr, const uint8_t *data, uint8_t len, uint32_t timeout_ms);
 int BQ_Reset_Comms(uint8_t data, uint32_t timeout_ms);
-
+int bq79616_direct_wake(void);
+int bq79616_clear_startup_faults(void);
 
 #endif /* BQ79616_H */

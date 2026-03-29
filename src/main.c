@@ -23,6 +23,10 @@ int main(void)
         Error_Handler();
     }
 
+    if((bq_status = bq79616_clear_startup_faults()) != 0) {
+        LOG_ERROR("Failed to clear startup faults: bq_status=%d", bq_status);
+        Error_Handler();
+    }
 
     // Auto Addressing is Skipped because we interface with BQ79616 directly (using isolated UART Logic Level Shifter [3.3V - 5.0V]) instead of using BQ79600
     // Use Device's Default Address: 0x01

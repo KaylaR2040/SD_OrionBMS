@@ -98,7 +98,7 @@ int BQ_Wake(uint8_t stack_count)
 {
     LOG_INFO("\n=== WAKE SEQUENCE TEST ===");
 
-    BQ_Status_t wake_bq_status = BQ_WakeSequence(stack_count);
+    int wake_bq_status = BQ_WakeSequence(stack_count);
     if (wake_bq_status != 0) {
         LOG_ERROR("Wake sequence failed: bq_status=%ld", (long)wake_bq_status);
         return (int)wake_bq_status;
@@ -129,7 +129,7 @@ void BQ79616_wake_ping(void){
     }
 }
 
-BQ_Status_t bq79616_direct_wake(void)
+int bq79616_direct_wake(void)
 {
     LOG_INFO("\n=== WAKE SEQUENCE TEST ===");
     LOG_INFO("Starting direct UART wake");
@@ -153,7 +153,7 @@ BQ_Status_t bq79616_direct_wake(void)
 }
 
 /* Full UART wake sequence: two pulses, bridge ACTIVE wait, SEND_WAKE */
-BQ_Status_t BQ_WakeSequence(uint8_t stack_count)
+int BQ_WakeSequence(uint8_t stack_count)
 {
 
     /*
@@ -234,30 +234,6 @@ int bq79616_stack_single_init(void)
 
 
 
-/* ----------------------------------------------------------------------------- */
-/* ---------------------------- RESET COMM FAULTS ------------------------------ */
-/* ----------------------------------------------------------------------------- */
-int BQ_Reset_Comms(uint8_t data, uint32_t timeout_ms){
-    int bq_status = bq7961x_stack_write(FAULT_RST1, &data, sizeof(data), timeout_ms);
-    if(bq_status != 0){
-        LOG_INFO("Failed to write to FAULT_RST1 register: bq_status=%d", bq_status); 
-        return bq_status;
-    }
-
-    bq_status = bq7961x_stack_write(FAULT_RST2, &data, sizeof(data), timeout_ms);
-    if(bq_status != 0){
-        LOG_INFO("Failed to write to FAULT_RST2 register: bq_status=%d", bq_status); 
-        return bq_status;
-    }
-
-    bq_status = bq7961x_single_write(DEVICE_ADDR, BRIDGE_FAULT_RST, &data, sizeof(data), timeout_ms);
-    if(bq_status != 0){
-        LOG_INFO("Failed to write to BRIDGE_FAULT_RST register: bq_status=%d", bq_status); 
-        return bq_status;
-    }
-
-    return 0;
-}
 
 // /* ----------------------------------------------------------------------------- */
 // /* --------------------------- READ CHANNEL VOLTAGE ---------------------------- */
@@ -350,22 +326,6 @@ int bq79616_write(uint8_t dev_id,
     return bq7961x_single_write(dev_id, reg_addr, data, len, 1000u);
 }
 
-int bq79616_read(uint8_t dev_id,
-                 uint16_t reg_addr,
-                 uint8_t *out,
-                 uint8_t len)
-{
-    return bq79616_read_timeout(dev_id, reg_addr, out, len, 1000u);
-}
-
-int bq79616_read_timeout(uint8_t dev_id,
-                         uint16_t reg_addr,
-                         uint8_t *out,
-                         uint8_t len,
-                         uint32_t timeout_ms)
-{
-    return bq7961x_single_read(dev_id, reg_addr, out, len, timeout_ms);
-}
 
 /* Optional: explicitly set baudrate on the configured handle */
 int bq7961x_uart_set_baud(uint32_t baudrate)
@@ -677,7 +637,7 @@ int bq7961x_single_read(uint8_t dev_addr,
      */
     uint8_t req_data = (uint8_t)(out_len - 1u);
 
-    uint16_t cmd_len = 0u;
+    uint16_t cmd_len = 0u; // To be set by bq_build_cmd_frame
     int bq_status = bq_build_cmd_frame(tx_buf, sizeof(tx_buf),
                                 BQ_REQ_SINGLE_READ,
                                 dev_addr,
@@ -696,7 +656,7 @@ int bq7961x_single_read(uint8_t dev_addr,
      *   First byte is INIT (bit7 must be 0). It contains (response_bytes-1) in bits6:0.
      */
     uint8_t init = 0u;
-    bq_status = bq_uart_rx(&init, 1u, timeout_ms);
+    bq_status = bq_uart_rx(&init, sizeof(init), timeout_ms);
     if (bq_status != 0) return -10;
 
     uint8_t rsp_data_len = 0u;
@@ -723,7 +683,7 @@ int bq7961x_single_read(uint8_t dev_addr,
     uint16_t full_len = (uint16_t)(1u + remain);
 
     /* Cbq_status check across entire response (including Cbq_status) must be 0 */
-    bq_status = bq_cbq_status_validate_full_frame(rx_buf, full_len);
+    bq_status = bq_crc_validate_full_frame(rx_buf, full_len);
     if (bq_status != 0) return -15;
 
     /* Basic field checks */
@@ -862,7 +822,7 @@ int BQ79616_read_cell_voltage(uint8_t dev_addr, uint8_t cell_channel, uint16_t *
     uint16_t reg_addr = 0x0014u + (cell_channel * 2u);
 
     /* Read 2 bytes from the voltage register */
-    bq_status = bq79616_read(dev_addr, reg_addr, data, 2u);
+    bq_status = bq7961x_single_read(dev_addr, reg_addr, data, sizeof(data), BQ_FAST_TIMEOUT_MS);
     if (bq_status != 0) {
         return bq_status;
     }
@@ -900,8 +860,8 @@ bool BQ_ServiceTask(void)
             fault_check_tick = now;
             uint8_t fault_sys = 0, fault_comm1 = 0;
             
-            int fault_sys_bq_status = bq79616_read_timeout(DEVICE_ADDR, FAULT_SYS, &fault_sys, 1u, BQ_FAST_TIMEOUT_MS);
-            int fault_comm1_bq_status = bq79616_read_timeout(DEVICE_ADDR, FAULT_COMM1, &fault_comm1, 1u, BQ_FAST_TIMEOUT_MS);
+            int fault_sys_bq_status = bq7961x_single_read(DEVICE_ADDR, FAULT_SYS, &fault_sys, sizeof(fault_sys), BQ_FAST_TIMEOUT_MS);
+            int fault_comm1_bq_status = bq7961x_single_read(DEVICE_ADDR, FAULT_COMM1, &fault_comm1, sizeof(fault_comm1), BQ_FAST_TIMEOUT_MS);
             
             /* If the Read times out, the chip died or disconnected -> Disable Task! */
             if (fault_sys_bq_status != 0 || fault_comm1_bq_status != 0) {
@@ -918,3 +878,87 @@ bool BQ_ServiceTask(void)
     
     return true; /* Communication is still good, keep running */
 }
+
+
+#define RST_SYS_BIT        0x01u
+#define RST_PWR_BIT        0x02u
+
+#define RST_COMM1_BIT        0x01u
+#define RST_COMM2_BIT        0x02u
+#define RST_COMM3_HB_BIT     0x04u
+#define RST_COMM3_FTONE_BIT  0x08u
+#define RST_COMM3_FCOMM_BIT  0x10u
+
+int bq79616_clear_startup_faults(void)
+{
+    int status;
+    uint8_t val;
+
+    LOG_INFO("Reading FAULT_SUMMARY before clear...");
+    status = bq7961x_single_read(DEVICE_ADDR, FAULT_SUMMARY, &val, sizeof(val), BQ_FAST_TIMEOUT_MS);
+    if (status != 0) {
+        LOG_ERROR("Failed to read FAULT_SUMMARY");
+        return status;
+    }
+
+    LOG_INFO("FAULT_SUMMARY before clear = 0x%02X", val);
+
+    /* Optional detail reads */
+    (void)bq7961x_single_read(DEVICE_ADDR, FAULT_SYS, &val, sizeof(val), BQ_FAST_TIMEOUT_MS);
+    LOG_INFO("FAULT_SYS   = 0x%02X", val);
+
+    (void)bq7961x_single_read(DEVICE_ADDR, FAULT_PWR1, &val, sizeof(val), BQ_FAST_TIMEOUT_MS);
+    LOG_INFO("FAULT_PWR1  = 0x%02X", val);
+
+    (void)bq7961x_single_read(DEVICE_ADDR, FAULT_COMM1, &val, sizeof(val), BQ_FAST_TIMEOUT_MS);
+    LOG_INFO("FAULT_COMM1 = 0x%02X", val);
+
+    (void)bq7961x_single_read(DEVICE_ADDR, FAULT_COMM2, &val, sizeof(val), BQ_FAST_TIMEOUT_MS);
+    LOG_INFO("FAULT_COMM2 = 0x%02X", val);
+
+    (void)bq7961x_single_read(DEVICE_ADDR, FAULT_COMM3, &val, sizeof(val), BQ_FAST_TIMEOUT_MS);
+    LOG_INFO("FAULT_COMM3 = 0x%02X", val);
+
+    /* Clear system + power faults */
+    uint8_t rst1 = (uint8_t)(RST_SYS_BIT | RST_PWR_BIT);
+    status = bq79616_write(DEVICE_ADDR, FAULT_RST1, &rst1, 1u);
+    if (status != 0) {
+        LOG_ERROR("Failed to write FAULT_RST1");
+        return status;
+    }
+    LOG_INFO("Wrote FAULT_RST1 = 0x%02X", rst1);
+
+    /* Clear communication-related faults */
+    uint8_t rst2 = (uint8_t)(
+        RST_COMM1_BIT |
+        RST_COMM2_BIT |
+        RST_COMM3_HB_BIT |
+        RST_COMM3_FTONE_BIT |
+        RST_COMM3_FCOMM_BIT
+    );
+    status = bq79616_write(DEVICE_ADDR, FAULT_RST2, &rst2, 1u);
+    if (status != 0) {
+        LOG_ERROR("Failed to write FAULT_RST2");
+        return status;
+    }
+    LOG_INFO("Wrote FAULT_RST2 = 0x%02X", rst2);
+
+    HAL_Delay(2u);
+
+    status = bq7961x_single_read(DEVICE_ADDR, FAULT_SUMMARY, &val, sizeof(val), BQ_FAST_TIMEOUT_MS);
+    if (status != 0) {
+        LOG_ERROR("Failed to read FAULT_SUMMARY after clear");
+        return status;
+    }
+
+    LOG_INFO("FAULT_SUMMARY after clear = 0x%02X", val);
+
+    if (val != 0u) {
+        LOG_WARN("Fault is still present; underlying condition likely still exists");
+        return 1;
+    }
+
+    LOG_INFO("Fault clear successful");
+    return 0;
+}
+

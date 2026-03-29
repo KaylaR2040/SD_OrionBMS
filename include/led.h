@@ -28,6 +28,8 @@ typedef enum {
     LED_ID_COUNT
 } led_id_t;
 
+#define ERROR_LED LED_ID_LD3
+
 /* Default flash duration for LED_Flash (ms) */
 #ifndef LED_FLASH_DURATION_MS
 #define LED_FLASH_DURATION_MS 100U
