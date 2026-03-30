@@ -25,6 +25,12 @@
 
 #include "B0_reg.h"
 
+#define BQ_GPIO_PORT GPIOC
+#define BQ_GPIO_PIN GPIO_PIN_4
+
+#define GPIO_LOW GPIO_PIN_RESET
+#define GPIO_HIGH GPIO_PIN_SET
+
 #define BQ_CONTROL1_SEND_WAKE_MASK    (1u << 5)   /* CONTROL1[SEND_WAKE] */
 
 /* ------------------------- Datasheet-driven constants ---------------------- */

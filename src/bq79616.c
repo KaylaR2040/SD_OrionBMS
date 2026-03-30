@@ -120,9 +120,9 @@ void BQ79616_wake_ping(void){
     HAL_UART_DeInit(&uart_bq79616);
 
     bq_pin_tx_to_gpio();
-    bq_pin_tx_set(GPIO_PIN_RESET);
+    bq_pin_tx_set(GPIO_LOW);
     bq_delay_us(BQ_WAKE_PULSE_US);
-    bq_pin_tx_set(GPIO_PIN_SET);
+    bq_pin_tx_set(GPIO_HIGH);
 
     if (bq_uart_reinit() != 0) {
         Error_Handler();
@@ -137,7 +137,7 @@ int bq79616_direct_wake(void)
     HAL_UART_DeInit(&uart_bq79616);
 
     bq_pin_tx_to_gpio();
-    bq_pin_tx_set(GPIO_PIN_SET);
+    bq_pin_tx_set(GPIO_HIGH);
 
     bq_drive_wake_pulse(BQ_WAKE_PULSE_US);
 
@@ -349,7 +349,7 @@ void bq_pin_tx_to_gpio(void)
 
 void bq_pin_tx_set(GPIO_PinState state)
 {
-    HAL_GPIO_WritePin(GPIOC, GPIO_PIN_4, state);
+    HAL_GPIO_WritePin(BQ_GPIO_PORT, BQ_GPIO_PIN, state);
 }
 
 void bq_pin_tx_to_uart(void)
@@ -379,9 +379,9 @@ int bq_uart_reinit(void)
 void bq_drive_wake_pulse(uint32_t pulse_us)
 {
     /* Host manually drives TX low to generate UART wake ping per TI spec */
-    bq_pin_tx_set(GPIO_PIN_RESET);
+    bq_pin_tx_set(GPIO_LOW);
     bq_delay_us(pulse_us);
-    bq_pin_tx_set(GPIO_PIN_SET);
+    bq_pin_tx_set(GPIO_HIGH);
 }
 
 
