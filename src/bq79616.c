@@ -1154,13 +1154,13 @@ int bq79616_config_main_adc(void)
 {
     /* Mirror TI sample defaults: all cells active, LPF 26 Hz, continuous + MAIN_GO */
     int status;
-    status = WriteReg(0u, ACTIVE_CELL, 0x0Au, 1u, FRMWRT_ALL_W);
+    status = WriteReg(DEVICE_ADDR, ACTIVE_CELL, 0x0Au, 1u, FRMWRT_SGL_W);
     if (status != 0) return status;
 
-    status = WriteReg(0u, ADC_CONF1, 0x02u, 1u, FRMWRT_ALL_W);
+    status = WriteReg(DEVICE_ADDR, ADC_CONF1, 0x02u, 1u, FRMWRT_SGL_W);
     if (status != 0) return status;
 
-    status = WriteReg(0u, ADC_CTRL1, 0x0Eu, 1u, FRMWRT_ALL_W); /* continuous + LPF + MAIN_GO */
+    status = WriteReg(DEVICE_ADDR, ADC_CTRL1, 0x0Eu, 1u, FRMWRT_SGL_W); /* continuous + LPF + MAIN_GO */
     if (status != 0) return status;
 
     /* Allow LPF to settle: 38 ms + small margin */
@@ -1178,18 +1178,8 @@ int bq79616_init_device(void)
     /* Allow settle after shutdown->active transition */
     bq_delay_us(4000u);
 
-    /* Auto-address to 0 */
-    status = bq79616_auto_address_single();
-    if (status != 0) return status;
-
-    /* Allow settle after shutdown->active transition */
-    bq_delay_us(4000u);
-
-    /* Update CUST_CRC to clear CRC fault per TI sample */
-    (void)bq79616_update_cust_crc();
-
     /* Clear any startup faults (best-effort) */
-    ResetAllFaults(0u, FRMWRT_ALL_W);
+    ResetAllFaults(DEVICE_ADDR, FRMWRT_SGL_W);
 
     /* Configure ADC for continuous conversion */
     status = bq79616_config_main_adc();

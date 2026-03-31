@@ -15,11 +15,18 @@ int UART_RX_RDY = 0;
 int RTI_TIMEOUT = 0;
 /* USER CODE END */
 
+/* Fallback AutoAddress definition in case linker can't find the driver symbol */
+__attribute__((weak)) void AutoAddress(void)
+{
+    (void)bq79616_auto_address_single();
+}
+
 int main(void)
 {
     System_AppInit();
 
     /* Use our HAL-based init + read helpers (previous working path) */
+    AutoAddress(); /* explicit call to resolve linker and run addressing */
     int bq_status = bq79616_init_device();
     if (bq_status != 0) {
         LOG_ERROR("BQ init failed: bq_status=%d", bq_status);

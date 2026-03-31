@@ -66,7 +66,7 @@
 #define BQ_ENABLE_CONTROL1 0x00u
 #define BQ_COMM_CTRL_VALUE 0x02u
 #define BQ_TOP_OF_STACK_VALUE 0x03u
-#define DEVICE_ADDR 0x00u  /* After auto-address single device becomes address 0 */
+#define DEVICE_ADDR 0x01u  /* Use factory default address */
 #define DEV_CONF1 0x2001u // DEVCONF=0x02, REG_ADDR=0x001, word address 0x2001
 #define BQ_WAKE_POST_DELAY_US  10000u // 10mS - per Datasheet (pg. 17), wait after wake pulse before UART traffic
 
