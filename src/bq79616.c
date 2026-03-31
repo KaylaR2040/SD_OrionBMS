@@ -1122,6 +1122,12 @@ int bq79616_init_device(void)
     return status;
 }
 
+/* TI compatibility wrapper */
+void AutoAddress(void)
+{
+    (void)bq79616_auto_address_single();
+}
+
 int bq79616_read_all_cells(uint16_t *out_mv, size_t cell_count)
 {
     if (!out_mv || cell_count == 0u || cell_count > 16u) {

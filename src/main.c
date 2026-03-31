@@ -19,35 +19,31 @@ int main(void)
 {
     System_AppInit();
 
-    /* Mirror TI sample main flow using our HAL-backed TI-style functions */
-    Wake79616();
-    delayms(12 * 1); /* TOTALBOARDS=1 */
-    Wake79616();
-    delayms(12 * 1);
+    /* Use our HAL-based init + read helpers (previous working path) */
+    int bq_status = bq79616_init_device();
+    if (bq_status != 0) {
+        LOG_ERROR("BQ init failed: bq_status=%d", bq_status);
+        Error_Handler();
+    }
 
-    AutoAddress();
-    delayus(4000);
-    WriteReg(0, FAULT_MSK2, 0x40, 1, FRMWRT_ALL_W); /* mask CUST_CRC */
-    ResetAllFaults(0, FRMWRT_ALL_W);
+    uint8_t partid = 0u;
+    if (bq79616_read_partid_once(&partid) == 0) {
+        LOG_INFO("BQ79616 PARTID=0x%02X", partid);
+    }
 
-    /* Configure ADC like TI sample */
-    WriteReg(0, ACTIVE_CELL, 0x0A, 1, FRMWRT_ALL_W);   /* all cells active */
-    WriteReg(0, ADC_CONF1, 0x02, 1, FRMWRT_ALL_W);     /* 26 Hz LPF */
-    WriteReg(0, ADC_CTRL1, 0x0E, 1, FRMWRT_ALL_W);     /* continuous, LPF, MAIN_GO */
-    delayus(38000 + 5 * 1);
-
-    uint8_t response_frame[(16*2+6)*1] = {0};
-
+    uint16_t cell_mv[16] = {0};
     while (true) {
-        /* Read all 16 cell voltages via TI-style ReadReg */
-        memset(response_frame, 0, sizeof(response_frame));
-        ReadReg(0, VCELL16_HI, response_frame, 16*2, 0, FRMWRT_ALL_R);
+        (void)BQ_ServiceTask(); /* keep-alive */
 
-        /* Parse and log like TI sample: top-of-stack first in response */
-        for (int i = 0; i < 32; i += 2) {
-            uint16_t raw = (uint16_t)((response_frame[4 + i] << 8) | response_frame[5 + i]);
-            float cellVoltage = ((int16_t)raw) * 0.00019073f;
-            LOG_INFO("Cell %d = %.3f V", (32 - i)/2, cellVoltage);
+        bq_status = bq79616_read_all_cells(cell_mv, 16u);
+        if (bq_status == 0) {
+            LOG_INFO("Cell mV: "
+                     "1:%u 2:%u 3:%u 4:%u 5:%u 6:%u 7:%u 8:%u "
+                     "9:%u 10:%u 11:%u 12:%u 13:%u 14:%u 15:%u 16:%u",
+                     cell_mv[0], cell_mv[1], cell_mv[2], cell_mv[3],
+                     cell_mv[4], cell_mv[5], cell_mv[6], cell_mv[7],
+                     cell_mv[8], cell_mv[9], cell_mv[10], cell_mv[11],
+                     cell_mv[12], cell_mv[13], cell_mv[14], cell_mv[15]);
         }
 
         HAL_Delay(200u);
