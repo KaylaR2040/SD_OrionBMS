@@ -875,6 +875,7 @@ int bq79616_clear_startup_faults(void)
 {
     int status;
     uint8_t val;
+    uint8_t summary;
 
     /* Allow time for device to finish wake/auto-address transitions */
     HAL_Delay(10u);
@@ -891,7 +892,8 @@ int bq79616_clear_startup_faults(void)
         return status;
     }
 
-    LOG_INFO("FAULT_SUMMARY before clear = 0x%02X", val);
+    summary = val;
+    LOG_INFO("FAULT_SUMMARY before clear = 0x%02X", summary);
 
     /* Optional detail reads */
     (void)bq7961x_single_read(DEVICE_ADDR, FAULT_SYS, &val, sizeof(val), BQ_FAST_TIMEOUT_MS);
@@ -909,29 +911,32 @@ int bq79616_clear_startup_faults(void)
     (void)bq7961x_single_read(DEVICE_ADDR, FAULT_COMM3, &val, sizeof(val), BQ_FAST_TIMEOUT_MS);
     LOG_INFO("FAULT_COMM3 = 0x%02X", val);
 
+    /* If CUST_CRC fault (bit 5 of FAULT_SUMMARY) is set, update CRC then clear */
+    if (summary & 0x20u) {
+        status = bq79616_update_cust_crc();
+        if (status != 0) {
+            LOG_WARN("CUST_CRC update failed (bq_status=%d); masking to allow run", status);
+            (void)WriteReg(0u, FAULT_MSK2, 0x40u, 1u, FRMWRT_ALL_W);
+        }
+    }
+
     /* Clear system + power faults */
-    uint8_t rst1 = (uint8_t)(RST_SYS_BIT | RST_PWR_BIT);
-    status = bq79616_write(DEVICE_ADDR, FAULT_RST1, &rst1, 1u);
+    uint64_t rst1_val = 0xFFFFu;
+    status = WriteReg(DEVICE_ADDR, FAULT_RST1, rst1_val, 2u, FRMWRT_SGL_W);
     if (status != 0) {
         LOG_ERROR("Failed to write FAULT_RST1");
         return status;
     }
-    LOG_INFO("Wrote FAULT_RST1 = 0x%02X", rst1);
+    LOG_INFO("Wrote FAULT_RST1 = 0x%04X", (unsigned)rst1_val);
 
     /* Clear communication-related faults */
-    uint8_t rst2 = (uint8_t)(
-        RST_COMM1_BIT |
-        RST_COMM2_BIT |
-        RST_COMM3_HB_BIT |
-        RST_COMM3_FTONE_BIT |
-        RST_COMM3_FCOMM_BIT
-    );
-    status = bq79616_write(DEVICE_ADDR, FAULT_RST2, &rst2, 1u);
+    uint64_t rst2_val = 0xFFFFu;
+    status = WriteReg(DEVICE_ADDR, FAULT_RST2, rst2_val, 2u, FRMWRT_SGL_W);
     if (status != 0) {
         LOG_ERROR("Failed to write FAULT_RST2");
         return status;
     }
-    LOG_INFO("Wrote FAULT_RST2 = 0x%02X", rst2);
+    LOG_INFO("Wrote FAULT_RST2 = 0x%04X", (unsigned)rst2_val);
 
     HAL_Delay(2u);
 
@@ -949,6 +954,72 @@ int bq79616_clear_startup_faults(void)
     }
 
     LOG_INFO("Fault clear successful");
+    return 0;
+}
+
+int bq79616_update_cust_crc(void)
+{
+    uint8_t crc_rslt[2] = {0};
+    HAL_Delay(20u); /* allow customer area load */
+
+    int status = bq7961x_single_read(DEVICE_ADDR, CUST_CRC_RSLT_HI, crc_rslt, 2u, BQ_FIRST_READ_TIMEOUT_MS);
+    if (status != 0) {
+        LOG_ERROR("CUST_CRC_RSLT read failed (bq_status=%d)", status);
+        return status;
+    }
+
+    uint64_t crc_val = ((uint16_t)crc_rslt[0] << 8) | crc_rslt[1];
+    status = WriteReg(DEVICE_ADDR, CUST_CRC_HI, crc_val, 2u, FRMWRT_SGL_W);
+    if (status != 0) {
+        LOG_ERROR("CUST_CRC write failed (bq_status=%d)", status);
+        return status;
+    }
+    LOG_INFO("CUST_CRC updated to 0x%04X (RSLT_HI/LO=%02X%02X)", (unsigned)crc_val, crc_rslt[0], crc_rslt[1]);
+
+    /* Clear faults after CRC update */
+    (void)WriteReg(DEVICE_ADDR, FAULT_RST1, 0xFFFFu, 2u, FRMWRT_SGL_W);
+    (void)WriteReg(DEVICE_ADDR, FAULT_RST2, 0xFFFFu, 2u, FRMWRT_SGL_W);
+    HAL_Delay(2u);
+
+    return 0;
+}
+
+/* Read and log key fault registers */
+int bq79616_log_fault_registers(void)
+{
+    uint8_t val = 0;
+    uint8_t summary = 0;
+    int status = 0;
+
+    status = bq7961x_single_read(DEVICE_ADDR, FAULT_SUMMARY, &summary, sizeof(summary), BQ_FIRST_READ_TIMEOUT_MS);
+    if (status != 0) {
+        LOG_ERROR("FAULT_SUMMARY read failed (bq_status=%d)", status);
+        return status;
+    }
+    LOG_INFO("FAULT_SUMMARY=0x%02X", summary);
+
+    if (summary != 0u) {
+        if (bq7961x_single_read(DEVICE_ADDR, FAULT_SYS, &val, sizeof(val), BQ_FAST_TIMEOUT_MS) == 0)
+            LOG_INFO("FAULT_SYS  =0x%02X", val);
+        if (bq7961x_single_read(DEVICE_ADDR, FAULT_PWR1, &val, sizeof(val), BQ_FAST_TIMEOUT_MS) == 0)
+            LOG_INFO("FAULT_PWR1 =0x%02X", val);
+        if (bq7961x_single_read(DEVICE_ADDR, FAULT_COMM1, &val, sizeof(val), BQ_FAST_TIMEOUT_MS) == 0)
+            LOG_INFO("FAULT_COMM1=0x%02X", val);
+        if (bq7961x_single_read(DEVICE_ADDR, FAULT_COMM2, &val, sizeof(val), BQ_FAST_TIMEOUT_MS) == 0)
+            LOG_INFO("FAULT_COMM2=0x%02X", val);
+        if (bq7961x_single_read(DEVICE_ADDR, FAULT_COMM3, &val, sizeof(val), BQ_FAST_TIMEOUT_MS) == 0)
+            LOG_INFO("FAULT_COMM3=0x%02X", val);
+
+        /* If CRC fault present, attempt update here too */
+        if (summary & 0x20u) {
+            status = bq79616_update_cust_crc();
+            if (status != 0) {
+                LOG_WARN("CUST_CRC update (periodic) failed bq_status=%d; masking", status);
+                (void)WriteReg(0u, FAULT_MSK2, 0x40u, 1u, FRMWRT_ALL_W);
+            }
+        }
+    }
+
     return 0;
 }
 
@@ -1114,8 +1185,11 @@ int bq79616_init_device(void)
     /* Allow settle after shutdown->active transition */
     bq_delay_us(4000u);
 
+    /* Update CUST_CRC to clear CRC fault per TI sample */
+    (void)bq79616_update_cust_crc();
+
     /* Clear any startup faults (best-effort) */
-    ResetAllFaults(DEVICE_ADDR, FRMWRT_SGL_W);
+    ResetAllFaults(0u, FRMWRT_ALL_W);
 
     /* Configure ADC for continuous conversion */
     status = bq79616_config_main_adc();

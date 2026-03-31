@@ -114,6 +114,8 @@ int bq79616_auto_address_single(void);
 int bq79616_config_main_adc(void);
 int bq79616_init_device(void);
 int bq79616_read_all_cells(uint16_t *out_mv, size_t cell_count);
+int bq79616_log_fault_registers(void);
+int bq79616_update_cust_crc(void);
 void Wake79616(void);
 void AutoAddress(void);
 void delayus(uint16_t us);

@@ -32,6 +32,8 @@ int main(void)
     }
 
     uint16_t cell_mv[16] = {0};
+    uint32_t last_fault_log = HAL_GetTick();
+    const uint32_t fault_log_period_ms = 1000u;
     while (true) {
         (void)BQ_ServiceTask(); /* keep-alive */
 
@@ -44,6 +46,13 @@ int main(void)
                      cell_mv[4], cell_mv[5], cell_mv[6], cell_mv[7],
                      cell_mv[8], cell_mv[9], cell_mv[10], cell_mv[11],
                      cell_mv[12], cell_mv[13], cell_mv[14], cell_mv[15]);
+        }
+
+        /* Periodically dump fault registers to help diagnose FAULT LED */
+        uint32_t now = HAL_GetTick();
+        if ((now - last_fault_log) >= fault_log_period_ms) {
+            (void)bq79616_log_fault_registers();
+            last_fault_log = now;
         }
 
         HAL_Delay(200u);
