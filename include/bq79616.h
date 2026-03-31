@@ -45,6 +45,15 @@
 #define BQ_STACK_COUNT   1u
 #define BQ_FAST_TIMEOUT_MS 1000u 
 
+/* TI reference code compatibility (frame write/read types) */
+#define FRMWRT_SGL_R        0x00u
+#define FRMWRT_SGL_W        0x10u
+#define FRMWRT_STK_R        0x20u
+#define FRMWRT_STK_W        0x30u
+#define FRMWRT_ALL_R        0x40u
+#define FRMWRT_ALL_W        0x50u
+#define FRMWRT_REV_ALL_W    0x60u
+
 /* ------------------------- Wake timing (TI SLUUC56C) -------------------- */
 
 #define BQ_WAKE_PULSE_US              2750u   /* TX low duration per wake ping */
@@ -57,7 +66,7 @@
 #define BQ_ENABLE_CONTROL1 0x00u
 #define BQ_COMM_CTRL_VALUE 0x02u
 #define BQ_TOP_OF_STACK_VALUE 0x03u
-#define DEVICE_ADDR 0x01u
+#define DEVICE_ADDR 0x00u  /* After auto-address single device becomes address 0 */
 #define DEV_CONF1 0x2001u // DEVCONF=0x02, REG_ADDR=0x001, word address 0x2001
 #define BQ_WAKE_POST_DELAY_US  10000u // 10mS - per Datasheet (pg. 17), wait after wake pulse before UART traffic
 
@@ -101,6 +110,14 @@ int BQ_WakeSequence(uint8_t stack_count);
 
 
 int bq79616_stack_single_init(void);
+int bq79616_auto_address_single(void);
+int bq79616_config_main_adc(void);
+int bq79616_init_device(void);
+int bq79616_read_all_cells(uint16_t *out_mv, size_t cell_count);
+void Wake79616(void);
+void AutoAddress(void);
+void delayus(uint16_t us);
+void delayms(uint16_t ms);
 
 
 /* Read cell voltage (keeps device alive via periodic UART communication) */
@@ -127,5 +144,11 @@ int bq7961x_stack_write(uint16_t reg_addr, const uint8_t *data, uint8_t len, uin
 int BQ_Reset_Comms(uint8_t data, uint32_t timeout_ms);
 int bq79616_direct_wake(void);
 int bq79616_clear_startup_faults(void);
+
+/* TI reference compatible helpers */
+int WriteReg(uint8_t bID, uint16_t wAddr, uint64_t dwData, uint8_t bLen, uint8_t bWriteType);
+int ReadReg(uint8_t bID, uint16_t wAddr, uint8_t *pData, uint8_t bLen, uint32_t timeout_ms, uint8_t bWriteType);
+void ResetAllFaults(uint8_t bID, uint8_t bWriteType);
+void MaskAllFaults(uint8_t bID, uint8_t bWriteType);
 
 #endif /* BQ79616_H */

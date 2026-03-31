@@ -36,7 +36,7 @@ typedef enum
 static uint8_t tx_buf[BQ_TX_MAX];
 static uint8_t rx_buf[BQ_RX_MAX];
 
-#define BQ_FIRST_READ_TIMEOUT_MS 50u
+#define BQ_FIRST_READ_TIMEOUT_MS 200u
 
 // Function Declarations
 void bq_pin_tx_to_gpio(void);
@@ -76,6 +76,12 @@ uint16_t bq_crc16(const uint8_t *data, uint16_t len)
         crc = (uint16_t)((crc >> 8) ^ crc16_table[idx]);
     }
     return crc;
+}
+
+/* Alias used by TI reference code naming */
+uint16_t bq_crc16_ibm(const uint8_t *data, uint16_t len)
+{
+    return bq_crc16(data, len);
 }
 
 /* Validate per datasheet: CRC computed across entire frame including CRC must be 0 */
@@ -175,8 +181,8 @@ int BQ_WakeSequence(uint8_t stack_count)
     /* First wake ping */
     bq_drive_wake_pulse(BQ_WAKE_PULSE_US);
 
-    /* Required shutdown interval before second ping */
-    bq_delay_us(BQ_WAKE_SHUT_DELAY_US);
+    /* Required shutdown interval before second ping (TI sample waits ~12 ms) */
+    HAL_Delay(12u);
 
     LOG_INFO("Driving wake pulse 2");
     bq_drive_wake_pulse(BQ_WAKE_PULSE_US);
@@ -187,13 +193,10 @@ int BQ_WakeSequence(uint8_t stack_count)
         return -1;
     }
 
-    /* Propagate wake to stacked devices via CONTROL1[SEND_WAKE] */
+    /* Propagate wake to stacked devices via CONTROL1[SEND_WAKE] (broadcast) */
     uint8_t control1 = BQ_CONTROL1_SEND_WAKE_MASK;
     LOG_INFO("Sending CONTROL1[SEND_WAKE]");
-    if (bq79616_write(DEVICE_ADDR, CONTROL1, &control1, 1u) != 0) {
-        LOG_ERROR("Failed to write CONTROL1[SEND_WAKE]");
-        return -1;
-    }
+    (void)bq7961x_broadcast_write(CONTROL1, &control1, 1u, 1000u);
 
     /* Optional COMM_CLEAR broadcast: clears UART state on all nodes */
     uint8_t comm_clear = 0x00u;
@@ -342,7 +345,7 @@ void bq_pin_tx_to_gpio(void)
     GPIO_InitTypeDef g = {0};
     g.Pin = GPIO_PIN_4;
     g.Mode = GPIO_MODE_OUTPUT_PP;
-    g.Pull = GPIO_NOPULL;
+    g.Pull = GPIO_PULLUP;
     g.Speed = GPIO_SPEED_FREQ_HIGH;
     HAL_GPIO_Init(GPIOC, &g);
 }
@@ -388,9 +391,6 @@ void bq_drive_wake_pulse(uint32_t pulse_us)
 void bq_enable_dwt(void)
 {
     /* Enable DWT cycle counter for sub-ms delays if not already on */
-    // TODO: Verify this code change to make it compile
-    // if (!(CoreDebug->DEMCR & CoreDebug_DEMCR_Tbq_statusENA_Msk)) {
-    //     CoreDebug->DEMCR |= CoreDebug_DEMCR_Tbq_statusENA_Msk;
     if (!(CoreDebug->DEMCR & CoreDebug_DEMCR_TRCENA_Msk)) {
         CoreDebug->DEMCR |= CoreDebug_DEMCR_TRCENA_Msk;
     }
@@ -408,6 +408,17 @@ void bq_delay_us(uint32_t us)
     while ((DWT->CYCCNT - start) < cycles) {
         __NOP();
     }
+}
+
+/* TI-style delay wrappers */
+void delayus(uint16_t us)
+{
+    bq_delay_us(us);
+}
+
+void delayms(uint16_t ms)
+{
+    HAL_Delay(ms);
 }
 
 void bq_log_hex(const char *label, const uint8_t *buf, size_t len)
@@ -465,73 +476,21 @@ int bq79616_build_single_read_frame(uint16_t reg_addr,
 
 int bq79616_read_partid_once(uint8_t *partid_out)
 {
-    uint8_t tx_frame[BQ_SINGLE_READ_FRAME_LEN] = {0};
-    uint8_t rx_frame[BQ_SINGLE_READ_FRAME_LEN] = {0};
-    size_t tx_len = 0u;
-
     LOG_INFO("=== BQ79616 bring-up: PARTID read ===");
 
-    int bq_status = bq79616_build_single_read_frame(BQ_PARTID_REG, 0x00u, tx_frame, sizeof(tx_frame), &tx_len);
+    uint8_t val = 0u;
+    int bq_status = bq7961x_single_read(DEVICE_ADDR, BQ_PARTID_REG, &val, 1u, BQ_FIRST_READ_TIMEOUT_MS);
     if (bq_status != 0) {
-        LOG_ERROR("PARTID: frame build failed (bq_status=%d)", bq_status);
+        LOG_ERROR("PARTID: read failed (bq_status=%d)", bq_status);
         return bq_status;
     }
-    LOG_INFO("PARTID: frame built (reg=0x%04X, len=%u)", BQ_PARTID_REG, (unsigned)tx_len);
-    bq_log_hex("TX frame", tx_frame, tx_len);
 
-    LOG_INFO("PARTID: expecting RX len=%u bytes (INIT+DEV+REG+DATA+CRC) dev=0x%02X reg=0x%04X data_len=1",
-             BQ_SINGLE_READ_FRAME_LEN, DEVICE_ADDR, BQ_PARTID_REG);
-
-    LOG_INFO("PARTID: TX/RX start (one transaction)");
-    bq_status = bq_uart_txrx(tx_frame, (uint16_t)tx_len, rx_frame, BQ_SINGLE_READ_FRAME_LEN, BQ_FIRST_READ_TIMEOUT_MS);
-    if (bq_status != 0) {
-        LOG_ERROR("PARTID: TX/RX failed (bq_status=%d)", bq_status);
-        return bq_status;
-    }
-    LOG_INFO("PARTID: TX/RX complete (%u bytes RX)", BQ_SINGLE_READ_FRAME_LEN);
-    bq_log_hex("RX frame", rx_frame, BQ_SINGLE_READ_FRAME_LEN);
-
-    uint16_t crc_calc = bq_crc16_ibm(rx_frame, 5u);
-    uint16_t crc_frame = (uint16_t)((rx_frame[5] << 8) | rx_frame[6]);
-    if (crc_calc == crc_frame) {
-        LOG_INFO("PARTID: CRC PASS (calc=0x%04X frame=0x%04X)", crc_calc, crc_frame);
-    } else {
-        LOG_ERROR("PARTID: CRC FAIL (calc=0x%04X frame=0x%04X)", crc_calc, crc_frame);
-        return -20;
-    }
-
-    uint8_t init = rx_frame[0];
-    if (init != 0x00u) {
-        LOG_WARN("PARTID: unexpected INIT 0x%02X (expected 0x00 for 1-byte response)", init);
-    }
-
-    uint8_t rsp_dev = (uint8_t)(rx_frame[1] & BQ_DEV_ADDR_MAX);
-    if (rsp_dev != (DEVICE_ADDR & BQ_DEV_ADDR_MAX)) {
-        LOG_ERROR("PARTID: DEV_ADDR mismatch (rx=0x%02X exp=0x%02X)", rsp_dev, DEVICE_ADDR);
-        return -21;
-    }
-
-    uint16_t rsp_reg = (uint16_t)((rx_frame[2] << 8) | rx_frame[3]);
-    if (rsp_reg != BQ_PARTID_REG) {
-        LOG_ERROR("PARTID: REG mismatch (rx=0x%04X exp=0x%04X)", rsp_reg, BQ_PARTID_REG);
-        return -22;
-    }
-
-    uint8_t partid = rx_frame[4];
     if (partid_out) {
-        *partid_out = partid;
+        *partid_out = val;
     }
 
-    LOG_INFO("PARTID: expected=0x%02X", BQ_PARTID_EXPECTED);
-    LOG_INFO("PARTID: received=0x%02X", partid);
-
-    if (partid == BQ_PARTID_EXPECTED) {
-        LOG_INFO("PARTID: PASS");
-        return 0;
-    }
-
-    LOG_ERROR("PARTID: FAIL");
-    return -23;
+    LOG_INFO("PARTID: expected=0x%02X received=0x%02X", BQ_PARTID_EXPECTED, val);
+    return (val == BQ_PARTID_EXPECTED) ? 0 : 1;
 }
 
 int bq_build_cmd_frame(uint8_t *out,
@@ -808,6 +767,29 @@ int bq7961x_uart_init(void)
     return 0;
 }
 
+/* TI-style wake helper */
+void Wake79616(void)
+{
+    /* Two 2.5 ms low pulses with UART temporarily released */
+    HAL_UART_DeInit(&uart_bq79616);
+    bq_pin_tx_to_gpio();
+
+    bq_pin_tx_set(GPIO_LOW);
+    delayus(2500);
+    bq_pin_tx_set(GPIO_HIGH);
+    bq_pin_tx_to_uart();
+    HAL_UART_Init(&uart_bq79616);
+
+    HAL_UART_DeInit(&uart_bq79616);
+    bq_pin_tx_to_gpio();
+
+    bq_pin_tx_set(GPIO_LOW);
+    delayus(2500);
+    bq_pin_tx_set(GPIO_HIGH);
+    bq_pin_tx_to_uart();
+    HAL_UART_Init(&uart_bq79616);
+}
+
 /* Read cell voltage from ADC (keeps device ACTIVE via periodic communication) */
 int BQ79616_read_cell_voltage(uint8_t dev_addr, uint8_t cell_channel, uint16_t *voltage_mv)
 {
@@ -894,8 +876,16 @@ int bq79616_clear_startup_faults(void)
     int status;
     uint8_t val;
 
+    /* Allow time for device to finish wake/auto-address transitions */
+    HAL_Delay(10u);
+
     LOG_INFO("Reading FAULT_SUMMARY before clear...");
-    status = bq7961x_single_read(DEVICE_ADDR, FAULT_SUMMARY, &val, sizeof(val), BQ_FAST_TIMEOUT_MS);
+    status = bq7961x_single_read(DEVICE_ADDR, FAULT_SUMMARY, &val, sizeof(val), BQ_FIRST_READ_TIMEOUT_MS);
+    if (status != 0) {
+        /* Retry a couple of times before giving up */
+        HAL_Delay(5u);
+        status = bq7961x_single_read(DEVICE_ADDR, FAULT_SUMMARY, &val, sizeof(val), BQ_FIRST_READ_TIMEOUT_MS);
+    }
     if (status != 0) {
         LOG_ERROR("Failed to read FAULT_SUMMARY");
         return status;
@@ -962,3 +952,204 @@ int bq79616_clear_startup_faults(void)
     return 0;
 }
 
+/* ----------------------------------------------------------------------------- */
+/* --------- TI reference style helpers (single-device focused) ---------------- */
+/* ----------------------------------------------------------------------------- */
+
+int WriteReg(uint8_t bID, uint16_t wAddr, uint64_t dwData, uint8_t bLen, uint8_t bWriteType)
+{
+    if (bLen < 1u || bLen > 8u) {
+        return -1;
+    }
+
+    uint8_t buf[8] = {0};
+    for (uint8_t i = 0u; i < bLen; i++) {
+        /* MSB first (matches TI reference code ordering) */
+        buf[i] = (uint8_t)((dwData >> (8u * (bLen - 1u - i))) & 0xFFu);
+    }
+
+    switch (bWriteType) {
+    case FRMWRT_SGL_W:
+        return bq7961x_single_write(bID, wAddr, buf, bLen, BQ_FAST_TIMEOUT_MS);
+    case FRMWRT_ALL_W:
+        return bq7961x_broadcast_write(wAddr, buf, bLen, BQ_FAST_TIMEOUT_MS);
+    case FRMWRT_STK_W:
+        return bq7961x_stack_write(wAddr, buf, bLen, BQ_FAST_TIMEOUT_MS);
+    case FRMWRT_REV_ALL_W:
+        return bq7961x_broadcast_write_reverse(wAddr, buf, bLen, BQ_FAST_TIMEOUT_MS);
+    default:
+        return -2;
+    }
+}
+
+int ReadReg(uint8_t bID, uint16_t wAddr, uint8_t *pData, uint8_t bLen, uint32_t timeout_ms, uint8_t bWriteType)
+{
+    if (!pData || bLen < 1u || bLen > BQ_READ_MAX_BYTES) {
+        return -1;
+    }
+
+    uint8_t dev = bID;
+    /* For single-device systems treat all read types as single read */
+    (void)bWriteType;
+
+    uint8_t payload[BQ_READ_MAX_BYTES] = {0};
+    int status = bq7961x_single_read(dev, wAddr, payload, bLen, timeout_ms);
+    if (status != 0) {
+        return status;
+    }
+
+    /* Build a response frame that mirrors TI's expected layout:
+     * INIT | DEV | REG_H | REG_L | DATA... | CRC_L | CRC_H
+     */
+    uint8_t init = (uint8_t)((bLen - 1u) & 0x7Fu); /* response_bytes-1 */
+    pData[0] = init;
+    pData[1] = (uint8_t)(dev & BQ_DEV_ADDR_MAX);
+    pData[2] = (uint8_t)((wAddr >> 8) & 0xFFu);
+    pData[3] = (uint8_t)(wAddr & 0xFFu);
+    memcpy(&pData[4], payload, bLen);
+
+    uint16_t crc = bq_crc16(pData, (uint16_t)(4u + bLen));
+    pData[4 + bLen] = (uint8_t)(crc & 0xFFu);
+    pData[5 + bLen] = (uint8_t)((crc >> 8) & 0xFFu);
+
+    return (int)(bLen + 6u); /* total frame length returned */
+}
+
+void ResetAllFaults(uint8_t bID, uint8_t bWriteType)
+{
+    uint64_t rst_val = 0xFFFFu; /* two bytes */
+    (void)bID;
+    if (bWriteType == FRMWRT_ALL_W) {
+        (void)WriteReg(0u, FAULT_RST1, rst_val, 2u, FRMWRT_ALL_W);
+    } else {
+        (void)WriteReg(DEVICE_ADDR, FAULT_RST1, rst_val, 2u, FRMWRT_SGL_W);
+    }
+}
+
+void MaskAllFaults(uint8_t bID, uint8_t bWriteType)
+{
+    uint64_t mask = 0xFFFFu; /* two bytes */
+    (void)bID;
+    if (bWriteType == FRMWRT_ALL_W) {
+        (void)WriteReg(0u, FAULT_MSK1, mask, 2u, FRMWRT_ALL_W);
+    } else {
+        (void)WriteReg(DEVICE_ADDR, FAULT_MSK1, mask, 2u, FRMWRT_SGL_W);
+    }
+}
+
+int bq79616_auto_address_single(void)
+{
+    /* TI-style single-board auto-address using broadcast */
+    int status;
+
+    /* Dummy writes to sync DLLs */
+    status = WriteReg(0u, OTP_ECC_DATAIN1, 0x00u, 1u, FRMWRT_ALL_W); if (status != 0) return status;
+    status = WriteReg(0u, OTP_ECC_DATAIN2, 0x00u, 1u, FRMWRT_ALL_W); if (status != 0) return status;
+    status = WriteReg(0u, OTP_ECC_DATAIN3, 0x00u, 1u, FRMWRT_ALL_W); if (status != 0) return status;
+    status = WriteReg(0u, OTP_ECC_DATAIN4, 0x00u, 1u, FRMWRT_ALL_W); if (status != 0) return status;
+    status = WriteReg(0u, OTP_ECC_DATAIN5, 0x00u, 1u, FRMWRT_ALL_W); if (status != 0) return status;
+    status = WriteReg(0u, OTP_ECC_DATAIN6, 0x00u, 1u, FRMWRT_ALL_W); if (status != 0) return status;
+    status = WriteReg(0u, OTP_ECC_DATAIN7, 0x00u, 1u, FRMWRT_ALL_W); if (status != 0) return status;
+    status = WriteReg(0u, OTP_ECC_DATAIN8, 0x00u, 1u, FRMWRT_ALL_W); if (status != 0) return status;
+
+    /* Enable AUTO_ADDR */
+    status = WriteReg(0u, CONTROL1, 0x01u, 1u, FRMWRT_ALL_W); if (status != 0) return status;
+
+    /* Set address of the single board to 0 */
+    status = WriteReg(0u, DIR0_ADDR, 0x00u, 1u, FRMWRT_ALL_W); if (status != 0) return status;
+
+    /* Set all to stack mode then single device base+top */
+    status = WriteReg(0u, COMM_CTRL, 0x02u, 1u, FRMWRT_ALL_W); if (status != 0) return status;
+    status = WriteReg(0u, COMM_CTRL, 0x01u, 1u, FRMWRT_SGL_W); if (status != 0) return status;
+
+    /* Throw-away reads to sync DLL */
+    uint8_t dummy[2];
+    (void)ReadReg(0u, OTP_ECC_DATAIN1, dummy, 1u, BQ_FAST_TIMEOUT_MS, FRMWRT_ALL_R);
+    (void)ReadReg(0u, OTP_ECC_DATAIN2, dummy, 1u, BQ_FAST_TIMEOUT_MS, FRMWRT_ALL_R);
+    (void)ReadReg(0u, OTP_ECC_DATAIN3, dummy, 1u, BQ_FAST_TIMEOUT_MS, FRMWRT_ALL_R);
+    (void)ReadReg(0u, OTP_ECC_DATAIN4, dummy, 1u, BQ_FAST_TIMEOUT_MS, FRMWRT_ALL_R);
+    (void)ReadReg(0u, OTP_ECC_DATAIN5, dummy, 1u, BQ_FAST_TIMEOUT_MS, FRMWRT_ALL_R);
+    (void)ReadReg(0u, OTP_ECC_DATAIN6, dummy, 1u, BQ_FAST_TIMEOUT_MS, FRMWRT_ALL_R);
+    (void)ReadReg(0u, OTP_ECC_DATAIN7, dummy, 1u, BQ_FAST_TIMEOUT_MS, FRMWRT_ALL_R);
+    (void)ReadReg(0u, OTP_ECC_DATAIN8, dummy, 1u, BQ_FAST_TIMEOUT_MS, FRMWRT_ALL_R);
+
+    /* Clear comm faults */
+    (void)WriteReg(0u, FAULT_RST2, 0x03u, 1u, FRMWRT_ALL_W);
+
+    return 0;
+}
+
+int bq79616_config_main_adc(void)
+{
+    /* Mirror TI sample defaults: all cells active, LPF 26 Hz, continuous + MAIN_GO */
+    int status;
+    status = WriteReg(0u, ACTIVE_CELL, 0x0Au, 1u, FRMWRT_ALL_W);
+    if (status != 0) return status;
+
+    status = WriteReg(0u, ADC_CONF1, 0x02u, 1u, FRMWRT_ALL_W);
+    if (status != 0) return status;
+
+    status = WriteReg(0u, ADC_CTRL1, 0x0Eu, 1u, FRMWRT_ALL_W); /* continuous + LPF + MAIN_GO */
+    if (status != 0) return status;
+
+    /* Allow LPF to settle: 38 ms + small margin */
+    bq_delay_us(38000u + (5u * BQ_STACK_COUNT));
+    return 0;
+}
+
+int bq79616_init_device(void)
+{
+    int status;
+
+    /* Two wake tones (TI sample calls Wake twice) */
+    Wake79616();
+
+    /* Allow settle after shutdown->active transition */
+    bq_delay_us(4000u);
+
+    /* Auto-address to 0 */
+    status = bq79616_auto_address_single();
+    if (status != 0) return status;
+
+    /* Allow settle after shutdown->active transition */
+    bq_delay_us(4000u);
+
+    /* Clear any startup faults (best-effort) */
+    ResetAllFaults(DEVICE_ADDR, FRMWRT_SGL_W);
+
+    /* Configure ADC for continuous conversion */
+    status = bq79616_config_main_adc();
+    return status;
+}
+
+int bq79616_read_all_cells(uint16_t *out_mv, size_t cell_count)
+{
+    if (!out_mv || cell_count == 0u || cell_count > 16u) {
+        return -1;
+    }
+
+    uint8_t raw[32] = {0};
+    int status = bq7961x_single_read(DEVICE_ADDR, VCELL16_HI, raw, 32u, BQ_FAST_TIMEOUT_MS);
+    if (status != 0) {
+        return status;
+    }
+
+    /* VCELL16_HI .. VCELL1_LO, 2 bytes per cell, descending cell order */
+    for (size_t i = 0; i < cell_count; i++) {
+        size_t byte_idx = i * 2u;
+        uint16_t adc_raw = (uint16_t)((raw[byte_idx] << 8) | raw[byte_idx + 1u]);
+
+        /* Convert to mV using 190.73 uV/LSB */
+        uint32_t mv = (uint32_t)adc_raw * 19073u;
+        mv = mv / 100000u;
+
+        /* Map so out_mv[0] corresponds to cell 1 (ascending order) */
+        size_t cell = 16u - i;           /* cell number (16..1) */
+        size_t idx_out = cell - 1u;      /* zero-based */
+        if (idx_out < cell_count) {
+            out_mv[idx_out] = (uint16_t)mv;
+        }
+    }
+
+    return 0;
+}

@@ -10,48 +10,46 @@
 
 #include "master.h"
 
+/* USER CODE BEGIN (2) */
+int UART_RX_RDY = 0;
+int RTI_TIMEOUT = 0;
+/* USER CODE END */
+
 int main(void)
 {
     System_AppInit();
 
-    int bq_status;
-    // bool bq_is_active = false;
+    /* Mirror TI sample main flow using our HAL-backed TI-style functions */
+    Wake79616();
+    delayms(12 * 1); /* TOTALBOARDS=1 */
+    Wake79616();
+    delayms(12 * 1);
 
-     /* WAKE SEQUENCE */
-    if((bq_status = bq79616_direct_wake()) != 0) {
-        LOG_ERROR("BQ_Wake failed: bq_status=%d", bq_status);
-        Error_Handler();
-    }
+    AutoAddress();
+    delayus(4000);
+    WriteReg(0, FAULT_MSK2, 0x40, 1, FRMWRT_ALL_W); /* mask CUST_CRC */
+    ResetAllFaults(0, FRMWRT_ALL_W);
 
-    if((bq_status = bq79616_clear_startup_faults()) != 0) {
-        LOG_ERROR("Failed to clear startup faults: bq_status=%d", bq_status);
-        Error_Handler();
-    }
+    /* Configure ADC like TI sample */
+    WriteReg(0, ACTIVE_CELL, 0x0A, 1, FRMWRT_ALL_W);   /* all cells active */
+    WriteReg(0, ADC_CONF1, 0x02, 1, FRMWRT_ALL_W);     /* 26 Hz LPF */
+    WriteReg(0, ADC_CTRL1, 0x0E, 1, FRMWRT_ALL_W);     /* continuous, LPF, MAIN_GO */
+    delayus(38000 + 5 * 1);
 
-    // Auto Addressing is Skipped because we interface with BQ79616 directly (using isolated UART Logic Level Shifter [3.3V - 5.0V]) instead of using BQ79600
-    // Use Device's Default Address: 0x01
-    
-    // bq_is_active = BQ_ServiceTask();
+    uint8_t response_frame[(16*2+6)*1] = {0};
 
-
-    // uint8_t partid = 0u;
-    // bq_status = bq79616_read_partid_once(&partid);
-    // if (bq_status != 0) {
-    //     LOG_ERROR("Initial PARTID read failed: bq_status=%d", bq_status);
-    //     Error_Handler();
-    // }
-
-    // LOG_INFO("Initial PARTID read success (0x%02X). Communication verified.", partid);
-    // LED_All_Pulse(1000u);
-
-    
     while (true) {
-        // if (bq_is_active) {
-        //     bq_is_active = BQ_ServiceTask();
-        // }
-        
-        // CAN_ServiceTask();
-        // ADC_ServiceTask();
+        /* Read all 16 cell voltages via TI-style ReadReg */
+        memset(response_frame, 0, sizeof(response_frame));
+        ReadReg(0, VCELL16_HI, response_frame, 16*2, 0, FRMWRT_ALL_R);
+
+        /* Parse and log like TI sample: top-of-stack first in response */
+        for (int i = 0; i < 32; i += 2) {
+            uint16_t raw = (uint16_t)((response_frame[4 + i] << 8) | response_frame[5 + i]);
+            float cellVoltage = ((int16_t)raw) * 0.00019073f;
+            LOG_INFO("Cell %d = %.3f V", (32 - i)/2, cellVoltage);
+        }
+
+        HAL_Delay(200u);
     }
 }
-
