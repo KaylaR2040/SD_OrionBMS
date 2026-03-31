@@ -1,67 +1,41 @@
 /*
  * ===========================================================================
  * File: main.c
- * Description: Application entry point that dispatches ADC tasks.
+ * Description: Application entry point.
  *
- * Notes:
- *   - Service tasks run every loop iteration; per-task timing lives in modules.
+ * Startup policy:
+ *   - BQ bring-up is best-effort.
+ *   - If BQ fails or later loses comms, disable only BQ handling.
+ *   - ADC + CAN thermistor path must continue running.
  * ===========================================================================
  */
 
 #include "master.h"
+
+bool bq_is_active = false;
 
 /* USER CODE BEGIN (2) */
 int UART_RX_RDY = 0;
 int RTI_TIMEOUT = 0;
 /* USER CODE END */
 
-/* Fallback AutoAddress definition in case linker can't find the driver symbol */
-__attribute__((weak)) void AutoAddress(void)
-{
-    (void)bq79616_auto_address_single();
-}
-
 int main(void)
 {
     System_AppInit();
+    LED_All_Pulse(100u);
 
-    /* Use our HAL-based init + read helpers (previous working path) */
-    AutoAddress(); /* explicit call to resolve linker and run addressing */
-    int bq_status = bq79616_init_device();
-    if (bq_status != 0) {
-        LOG_ERROR("BQ init failed: bq_status=%d", bq_status);
-        Error_Handler();
-    }
+    bq_is_active = BQ_TryInit();
 
-    uint8_t partid = 0u;
-    if (bq79616_read_partid_once(&partid) == 0) {
-        LOG_INFO("BQ79616 PARTID=0x%02X", partid);
-    }
-
-    uint16_t cell_mv[16] = {0};
-    uint32_t last_fault_log = HAL_GetTick();
-    const uint32_t fault_log_period_ms = 1000u;
     while (true) {
-        (void)BQ_ServiceTask(); /* keep-alive */
+        /* Thermistor pipeline has priority and must always run. */
+        ADC_ServiceTask();
+        CAN_ServiceTask();
 
-        bq_status = bq79616_read_all_cells(cell_mv, 16u);
-        if (bq_status == 0) {
-            LOG_INFO("Cell mV: "
-                     "1:%u 2:%u 3:%u 4:%u 5:%u 6:%u 7:%u 8:%u "
-                     "9:%u 10:%u 11:%u 12:%u 13:%u 14:%u 15:%u 16:%u",
-                     cell_mv[0], cell_mv[1], cell_mv[2], cell_mv[3],
-                     cell_mv[4], cell_mv[5], cell_mv[6], cell_mv[7],
-                     cell_mv[8], cell_mv[9], cell_mv[10], cell_mv[11],
-                     cell_mv[12], cell_mv[13], cell_mv[14], cell_mv[15]);
+        if (bq_is_active) {
+            if (!BQ_ServiceTask()) {
+                bq_is_active = false;
+                LOG_WARN("BQ comm lost. BQ task disabled; ADC/CAN thermistor TX continues.");
+            }
         }
-
-        /* Periodically dump fault registers to help diagnose FAULT LED */
-        uint32_t now = HAL_GetTick();
-        if ((now - last_fault_log) >= fault_log_period_ms) {
-            (void)bq79616_log_fault_registers();
-            last_fault_log = now;
-        }
-
-        HAL_Delay(200u);
     }
 }

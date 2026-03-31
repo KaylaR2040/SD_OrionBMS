@@ -70,6 +70,31 @@ static uint32_t CAN_GeneralIdForSource(uint8_t source_addr)
     return 0x18380000u | ((uint32_t)ORION_BMS_TARGET_ADDR << 8) | (uint32_t)source_addr;
 }
 
+static void CAN_LogTxFailure_(const char *frame_name, uint32_t can_id, int result)
+{
+    static uint32_t last_drop_log_ms = 0U;
+    static uint32_t dropped_frames = 0U;
+    const uint32_t now = HAL_GetTick();
+
+    if (result == CAN_TX_RESULT_TRANSIENT_DROP) {
+        dropped_frames++;
+        if ((now - last_drop_log_ms) >= 1000U) {
+            LOG_WARN("CAN TX congested/no-ack: dropped=%lu last=%s id=0x%08lX",
+                     (unsigned long)dropped_frames,
+                     frame_name,
+                     (unsigned long)can_id);
+            last_drop_log_ms = now;
+            dropped_frames = 0U;
+        }
+        return;
+    }
+
+    LOG_WARN("TX 0x%08lX %s failed result=%d",
+             (unsigned long)can_id,
+             frame_name,
+             result);
+}
+
 static void CAN_EncodeJ1939ClaimForModule(uint8_t source_addr, uint8_t module_index, uint8_t *payload)
 {
     payload[0] = ORION_CLAIM_UNIQUE_ID0;         /* 0xF3 */
@@ -455,7 +480,7 @@ void CAN_SendMessages(void)
             CAN_Debug_RecordClaim(payload, now_ms);
 
             if (result != 0) {
-                LOG_WARN("TX 0x%08lX claim failed result=%d", (unsigned long)claim_id, result);
+                CAN_LogTxFailure_("claim", claim_id, result);
             } else {
                 CAN_Debug_UpdateCoreState(module_index,
                                           source_addr,
@@ -503,7 +528,7 @@ void CAN_SendMessages(void)
                                       module_cache.max_id,
                                       module_cache.min_id);
             if (result != 0) {
-                LOG_WARN("TX 0x%08lX bms failed result=%d", (unsigned long)bms_id, result);
+                CAN_LogTxFailure_("bms", bms_id, result);
             } else {
                 CAN_Debug_RequestLogBms();
             }
@@ -527,7 +552,7 @@ void CAN_SendMessages(void)
                                       module_cache.max_id,
                                       module_cache.min_id);
             if (result != 0) {
-                LOG_WARN("TX 0x%08lX gen failed result=%d", (unsigned long)gen_id, result);
+                CAN_LogTxFailure_("gen", gen_id, result);
             } else {
                 CAN_Debug_RequestLogGeneral();
             }
@@ -554,7 +579,7 @@ void CAN_SendMessages(void)
         result = CAN_Comm_SendExt(THERM_J1939_CLAIM_ID, payload, 8U);
         CAN_Debug_RecordClaim(payload, HAL_GetTick());
         if (result != 0) {
-            LOG_WARN("TX 0x%08lX claim failed result=%d", (unsigned long)THERM_J1939_CLAIM_ID, result);
+            CAN_LogTxFailure_("claim", THERM_J1939_CLAIM_ID, result);
         } else {
             CAN_Debug_RequestLogClaim();
         }
@@ -582,7 +607,7 @@ void CAN_SendMessages(void)
                       s_cache.min_id);
 
         if (result != 0) {
-            LOG_WARN("TX 0x%08lX bms failed result=%d", (unsigned long)THERM_BMS_BROADCAST_ID, result);
+            CAN_LogTxFailure_("bms", THERM_BMS_BROADCAST_ID, result);
         } else {
             CAN_Debug_RequestLogBms();
         }
@@ -606,7 +631,7 @@ void CAN_SendMessages(void)
                       s_cache.min_id);
 
         if (result != 0) {
-            LOG_WARN("TX 0x%08lX gen failed result=%d", (unsigned long)THERM_GENERAL_BROADCAST_ID, result);
+            CAN_LogTxFailure_("gen", THERM_GENERAL_BROADCAST_ID, result);
         } else {
             CAN_Debug_RequestLogGeneral();
         }

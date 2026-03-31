@@ -132,6 +132,7 @@ int bq7961x_broadcast_write(uint16_t reg_addr,
                             uint32_t timeout_ms);
 
 bool BQ_ServiceTask(void);
+bool BQ_TryInit(void);
 
 /* ----------------------- BQ Interfacing Functions ----------------------- */
 int bq_uart_tx(const uint8_t *buf, uint16_t len, uint32_t timeout_ms);

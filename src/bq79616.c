@@ -823,6 +823,10 @@ bool BQ_ServiceTask(void)
 {
     static uint32_t last_keep_alive = 0;
     static uint32_t fault_check_tick = 0;
+    static uint32_t last_alive_log_tick = 0;
+    static uint32_t last_cell_log_tick = 0;
+    static uint32_t last_cell_log_fail_tick = 0;
+    static uint8_t consecutive_comm_failures = 0u;
     uint32_t now = HAL_GetTick();
     
     if ((now - last_keep_alive) >= 20u) {  /* Every 20ms: beat comm timeout */
@@ -831,11 +835,18 @@ bool BQ_ServiceTask(void)
         uint8_t keep = BQ_CONTROL1_SEND_WAKE_MASK | 0x01u; /* 0x21 */
         int bq_status = bq79616_write(DEVICE_ADDR, CONTROL1, &keep, 1u);
 
-        /* If write completely fails locally */
+        /* Tolerate short transient comm glitches before disabling BQ. */
         if (bq_status != 0) {
-            LOG_ERROR("BQ Keep-Alive Write FAILED! Disabling BQ task.");
-            return false; 
+            consecutive_comm_failures++;
+            if (consecutive_comm_failures >= 3u) {
+                LOG_ERROR("BQ Keep-Alive Write FAILED repeatedly (%u). Disabling BQ task.",
+                          (unsigned)consecutive_comm_failures);
+                return false;
+            }
+            LOG_WARN("BQ Keep-Alive write failed once (bq_status=%d). Retrying...", bq_status);
+            return true;
         }
+        consecutive_comm_failures = 0u;
 
         /* Every 200 ms, check FAULT using a VERY FAST timeout so we don't freeze */
         if ((now - fault_check_tick) >= 200u) {
@@ -845,16 +856,49 @@ bool BQ_ServiceTask(void)
             int fault_sys_bq_status = bq7961x_single_read(DEVICE_ADDR, FAULT_SYS, &fault_sys, sizeof(fault_sys), BQ_FAST_TIMEOUT_MS);
             int fault_comm1_bq_status = bq7961x_single_read(DEVICE_ADDR, FAULT_COMM1, &fault_comm1, sizeof(fault_comm1), BQ_FAST_TIMEOUT_MS);
             
-            /* If the Read times out, the chip died or disconnected -> Disable Task! */
+            /* If reads fail repeatedly, then disable. */
             if (fault_sys_bq_status != 0 || fault_comm1_bq_status != 0) {
-                LOG_ERROR("BQ Read FAILED! Comm lost. Disabling BQ task.");
-                return false; 
+                consecutive_comm_failures++;
+                if (consecutive_comm_failures >= 3u) {
+                    LOG_ERROR("BQ Read FAILED repeatedly (%u). Comm lost; disabling BQ task.",
+                              (unsigned)consecutive_comm_failures);
+                    return false;
+                }
+                LOG_WARN("BQ read failed once (sys=%d comm1=%d). Retrying...",
+                         fault_sys_bq_status, fault_comm1_bq_status);
+                return true;
             }
+            consecutive_comm_failures = 0u;
 
             /* Log actual faults if read succeeded */
             if (fault_sys | fault_comm1) {
-                LOG_ERROR("FAULT_SYS=0x%02X FAULT_COMM1=0x%02X", fault_sys, fault_comm1);
+                LOG_WARN("FAULT_SYS=0x%02X FAULT_COMM1=0x%02X", fault_sys, fault_comm1);
             }
+        }
+    }
+
+    if ((now - last_alive_log_tick) >= 2000u) {
+        last_alive_log_tick = now;
+        LOG_INFO("BQ service alive");
+    }
+
+    if ((now - last_cell_log_tick) >= 2000u) {
+        uint16_t cell_mv[16] = {0};
+        int cell_status;
+
+        last_cell_log_tick = now;
+        cell_status = bq79616_read_all_cells(cell_mv, 16u);
+        if (cell_status == 0) {
+            LOG_INFO("BQ cell mV: "
+                     "1:%u 2:%u 3:%u 4:%u 5:%u 6:%u 7:%u 8:%u "
+                     "9:%u 10:%u 11:%u 12:%u 13:%u 14:%u 15:%u 16:%u",
+                     cell_mv[0], cell_mv[1], cell_mv[2], cell_mv[3],
+                     cell_mv[4], cell_mv[5], cell_mv[6], cell_mv[7],
+                     cell_mv[8], cell_mv[9], cell_mv[10], cell_mv[11],
+                     cell_mv[12], cell_mv[13], cell_mv[14], cell_mv[15]);
+        } else if ((now - last_cell_log_fail_tick) >= 2000u) {
+            last_cell_log_fail_tick = now;
+            LOG_WARN("BQ cell read failed (bq_status=%d)", cell_status);
         }
     }
     
@@ -1190,6 +1234,36 @@ int bq79616_init_device(void)
 void AutoAddress(void)
 {
     (void)bq79616_auto_address_single();
+}
+
+bool BQ_TryInit(void)
+{
+    int bq_status;
+    int clear_status;
+    uint8_t partid = 0u;
+
+    /* Keep this path tolerant: BQ is optional for thermistor CAN operation. */
+    AutoAddress();
+
+    bq_status = bq79616_init_device();
+    if (bq_status != 0) {
+        LOG_WARN("BQ init failed (bq_status=%d). Continuing with ADC/CAN only.", bq_status);
+        return false;
+    }
+
+    if (bq79616_read_partid_once(&partid) == 0) {
+        LOG_INFO("BQ79616 PARTID=0x%02X", partid);
+    } else {
+        LOG_WARN("BQ PARTID read failed after init. Continuing with BQ keep-alive attempt.");
+    }
+
+    /* Best-effort startup fault clear (including CUST_CRC handling). */
+    clear_status = bq79616_clear_startup_faults();
+    if (clear_status != 0) {
+        LOG_WARN("BQ startup fault clear returned %d; continuing with BQ active.", clear_status);
+    }
+
+    return true;
 }
 
 int bq79616_read_all_cells(uint16_t *out_mv, size_t cell_count)

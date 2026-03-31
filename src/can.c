@@ -19,6 +19,20 @@ can_app_ctx_t g_can_ctx;
 #define DEFAULT_CAN_KBPS CAN_APP_DEFAULT_KBPS
 #endif
 
+#define CAN_TX_ERROR_LOG_PERIOD_MS 1000U
+
+static bool CAN_ShouldLogTxError_(void)
+{
+    static uint32_t last_tx_error_log_ms = 0U;
+    const uint32_t now = HAL_GetTick();
+
+    if ((now - last_tx_error_log_ms) >= CAN_TX_ERROR_LOG_PERIOD_MS) {
+        last_tx_error_log_ms = now;
+        return true;
+    }
+    return false;
+}
+
 
 /* -------------------------------------------------------------------------- */
 /* BITRATE FDCAN CONFIGURATION                          */
@@ -240,12 +254,14 @@ int CAN_Comm_SendExt(uint32_t ext_id, const uint8_t *data, uint8_t len)
     txHeader.MessageMarker = 0;
 
 
-        if (HAL_FDCAN_AddMessageToTxFifoQ(&g_fdcan1, &txHeader, (uint8_t *)data) != HAL_OK) {
-        LOG_ERROR("FDCAN TX enqueue failed ID=0x%08lX, HAL ErrorCode=0x%08lX, state=%lu",
-                  (unsigned long)ext_id,
-                  (unsigned long)g_fdcan1.ErrorCode,
-                  (unsigned long)HAL_FDCAN_GetState(&g_fdcan1));
-        return -1;
+    if (HAL_FDCAN_AddMessageToTxFifoQ(&g_fdcan1, &txHeader, (uint8_t *)data) != HAL_OK) {
+        if (CAN_ShouldLogTxError_()) {
+            LOG_WARN("FDCAN TX busy/no-ack ID=0x%08lX, HAL ErrorCode=0x%08lX, state=%lu",
+                     (unsigned long)ext_id,
+                     (unsigned long)g_fdcan1.ErrorCode,
+                     (unsigned long)HAL_FDCAN_GetState(&g_fdcan1));
+        }
+        return CAN_TX_RESULT_TRANSIENT_DROP;
     }
     return 0;
 }

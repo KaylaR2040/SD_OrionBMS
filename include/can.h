@@ -18,6 +18,7 @@
 #include "can_messages.h"
 
 #define CAN_APP_DEFAULT_KBPS 1000U
+#define CAN_TX_RESULT_TRANSIENT_DROP (-2)
 
 #ifdef __cplusplus
 extern "C" {
