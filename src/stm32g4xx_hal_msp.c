@@ -97,11 +97,11 @@ void HAL_FDCAN_MspDeInit(FDCAN_HandleTypeDef* hfdcan)
   }
 }
 
-/* Configure USART1/LPUART1/USART2 pins and NVIC for UART channels */
+/* Configure USART1/USART2 pins and NVIC for UART channels */
 void HAL_UART_MspInit(UART_HandleTypeDef* huart)
 {
   if (huart->Instance == USART1) {
-    /* USART1 (BQ79616) = PC4 (TX), PC5 (RX), AF7  */
+    /* USART1 (BQ79616 transport) = PC4 (TX), PC5 (RX), AF7 */
     __HAL_RCC_USART1_CLK_ENABLE();
     __HAL_RCC_GPIOC_CLK_ENABLE();
     GPIO_InitTypeDef g = {0};
@@ -115,24 +115,8 @@ void HAL_UART_MspInit(UART_HandleTypeDef* huart)
     HAL_NVIC_SetPriority(USART1_IRQn, 6, 0);
     HAL_NVIC_EnableIRQ(USART1_IRQn);
   }
-  else if (huart->Instance == LPUART1) {
-    /* LPUART1 (optional USB-UART logging) = PA2 (TX), PA3 (RX), AF12 */
-    __HAL_RCC_LPUART1_CLK_ENABLE();
-    __HAL_RCC_GPIOA_CLK_ENABLE();
-
-    GPIO_InitTypeDef g = {0};
-    g.Pin = GPIO_PIN_2 | GPIO_PIN_3; /* PA2 TX, PA3 RX */
-    g.Mode = GPIO_MODE_AF_PP;
-    g.Pull = GPIO_PULLUP;
-    g.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
-    g.Alternate = GPIO_AF12_LPUART1;
-    HAL_GPIO_Init(GPIOA, &g);
-
-    HAL_NVIC_SetPriority(LPUART1_IRQn, 6, 0);
-    HAL_NVIC_EnableIRQ(LPUART1_IRQn);
-  }
   else if (huart->Instance == USART2) {
-    /* USART2 (BQ79616) = PA2 (TX), PA3 (RX), AF7 — blocking transport */
+    /* USART2 (logging) = PA2 (TX), PA3 (RX), AF7 */
     __HAL_RCC_USART2_CLK_ENABLE();
     __HAL_RCC_GPIOA_CLK_ENABLE();
 

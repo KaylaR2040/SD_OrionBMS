@@ -123,9 +123,7 @@ void ADC_App_SampleAll(uint16_t out_vals[ADC_APP_CHANNEL_COUNT])
 void ADC_App_LogSnapshot(void)
 {
     uint16_t samples[ADC_APP_CHANNEL_COUNT] = {0};
-    const uint32_t channel_ids[ADC_APP_CHANNEL_COUNT] = {
-        1, 2, 5, 6, 7, 8, 9, 11, 14, 15
-    };
+    // STM32 Pins: 1, 2, 5, 6, 7, 8, 9, 11, 14, 15
     const char *channel_pins[ADC_APP_CHANNEL_COUNT] = {
         "PA0", "PA1", "PB14", "PC0", "PC1",
         "PC2", "PC3", "PB12", "PB11", "PB0"
@@ -167,9 +165,7 @@ void ADC_App_LogSnapshot(void)
 
 void ADC_LogCachedSnapshot(void)
 {// Removed Static Keywork to ensure this isn't cached when function isn't in use.
-    const uint32_t channel_ids[ADC_APP_CHANNEL_COUNT] = {
-        1, 2, 5, 6, 7, 8, 9, 11, 14, 15
-    };
+    // STM32 Pins: 1, 2, 5, 6, 7, 8, 9, 11, 14, 15
     const char *channel_pins[ADC_APP_CHANNEL_COUNT] = {
         "PA0", "PA1", "PB14", "PC0", "PC1",
         "PC2", "PC3", "PB12", "PB11", "PB0"

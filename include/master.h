@@ -34,6 +34,8 @@
 /* Master Macros */
 #define ERROR -1
 #define SUCCESS 0
+#define ACTIVE true
+#define FAILED false
 
 /* Project headers */
 #include "adc.h"

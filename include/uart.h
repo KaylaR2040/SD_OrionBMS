@@ -1,12 +1,12 @@
 /*
  * ===========================================================================
  * File: uart.h
- * Description: Consolidated UART interface for console (ST-Link VCP) and
- *              BQ79616 transport channels.
+ * Description: Consolidated UART interface for console logging and BQ79616
+ *              transport channels.
  *
  * Layers:
- *   - Console/logging: USART1 on ST-Link VCP
- *   - BQ transport:    USART2 to BQ79616 battery monitor
+ *   - Console/logging: USART2 on PA2/PA3 (ST-Link VCP)
+ *   - BQ transport:    USART1 on PC4/PC5 (BQ79616)
  *
  * Notes:
  *   - Logging helpers remain for convenience (LOG_INFO/WARN/ERROR/DEBUG).
@@ -27,13 +27,15 @@
 #include <stdbool.h>
 #include <stdarg.h>
 
-/* Console/logging UART (USART1 via ST-Link) */
+// Logging Status Flag used to enable or disable Logging if there are prehiperal issues
+extern volatile bool log_status;
+
+/* Console/logging UART (USART2 via ST-Link) */
 extern UART_HandleTypeDef uart_stlink;
 
-/* BQ79616 transport UART (USART2) */
+/* BQ79616 transport UART (USART1) */
 extern UART_HandleTypeDef uart_bq79616;
 
-#define UART_LOG_ENABLED 1
 
 typedef enum {
     LOG_LEVEL_INFO = 0,
