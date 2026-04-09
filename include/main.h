@@ -44,6 +44,12 @@ extern FDCAN_HandleTypeDef    g_fdcan1;
 extern FDCAN_TxHeaderTypeDef  g_can_tx_header;
 extern uint8_t                g_can_tx_data[8];
 
+/* Subsystem status flags - defined in main.c */
+extern volatile bool log_status;
+extern volatile bool can_status;
+extern volatile bool therm_status;
+extern volatile bool volt_status;
+
 /* LED pins (adjust to match board wiring as needed) */
 #define LED1_Pin          GPIO_PIN_9
 #define LED1_GPIO_Port    GPIOA

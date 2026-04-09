@@ -156,6 +156,11 @@ void CAN_App_InitData(can_app_ctx_t *ctx)
 //TODO: This should be changed to use an interrupt instead of the next sample and now thing.. 
 void CAN_ServiceTask(void)
 {
+    /* Check if CAN subsystem is active */
+    if (can_status == FAILED) {
+        return;
+    }
+
     CAN_SendMessages();
 }
 

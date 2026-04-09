@@ -83,6 +83,11 @@ void Log_Init(UART_HandleTypeDef *huart)
 /* Emit a formatted, colorized log line over UART */
 void Log_Printf(log_level_t level, const char *fmt, ...)
 {
+    /* Check if logging subsystem is active */
+    if (log_status == FAILED) {
+        return;
+    }
+
     if (!log_uart || level >= LOG_LEVEL_COUNT || fmt == NULL) {
         return;
     }

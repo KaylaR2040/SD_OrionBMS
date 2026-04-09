@@ -34,23 +34,17 @@ int main(void)
     System_AppInit();
     LED_All_Pulse(1000u);
 
-
     bq_is_active = bq79616_try_init();
-
+    if (!bq_is_active) {
+        volt_status = FAILED;
+    }
 
     while (true) {
-
 
         /* Thermistor pipeline has priority and must always run. */
         ADC_ServiceTask();
         CAN_ServiceTask();
-
-        if (bq_is_active) {
-            if (!bq79616_service_task()) {
-                bq_is_active = false;
-                LOG_WARN("BQ comm lost. BQ task disabled; ADC/CAN thermistor TX continues.");
-            }
-        }
+        bq79616_service_task();
         
     }
 }

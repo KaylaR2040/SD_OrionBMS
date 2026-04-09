@@ -559,6 +559,11 @@ int bq79616_read_cell_voltage(uint8_t dev_addr, uint8_t cell_channel, uint16_t *
 //TODO: Fix and use an interrupt not the last time
 bool bq79616_service_task(void)
 {
+    /* Check if voltage subsystem is already disabled */
+    if (volt_status == FAILED) {
+        return false;
+    }
+
     static uint32_t last_keep_alive = 0;
     static uint32_t fault_check_tick = 0;
     static uint32_t last_alive_log_tick = 0;
@@ -579,6 +584,7 @@ bool bq79616_service_task(void)
             if (consecutive_comm_failures >= 3u) {
                 LOG_ERROR("BQ Keep-Alive Write FAILED repeatedly (%u). Disabling BQ task.",
                           (unsigned)consecutive_comm_failures);
+                volt_status = FAILED;
                 return false;
             }
             LOG_WARN("BQ Keep-Alive write failed once (bq_status=%d). Retrying...", bq_status);
@@ -600,6 +606,7 @@ bool bq79616_service_task(void)
                 if (consecutive_comm_failures >= 3u) {
                     LOG_ERROR("BQ Read FAILED repeatedly (%u). Comm lost; disabling BQ task.",
                               (unsigned)consecutive_comm_failures);
+                    volt_status = FAILED;
                     return false;
                 }
                 LOG_WARN("BQ read failed once (sys=%d comm1=%d). Retrying...",

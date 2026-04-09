@@ -200,6 +200,10 @@ void ADC_LogCachedSnapshot(void)
 //TODO: This should be changed to use an interrupt instead of the next sample and now thing.. 
 void ADC_ServiceTask(void)
 {
+    /* Check if thermistor subsystem is active */
+    if (therm_status == FAILED) {
+        return;
+    }
 
     const uint32_t now_ms = HAL_GetTick();
 
