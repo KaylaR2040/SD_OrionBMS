@@ -68,7 +68,7 @@ static const uint16_t crc16_table[256] = {
     0x4400,0x84C1,0x8581,0x4540,0x8701,0x47C0,0x4680,0x8641,0x8201,0x42C0,0x4380,0x8341,0x4100,0x81C1,0x8081,0x4040
 };
 
-uint16_t bq_crc16(const uint8_t *data, uint16_t len)
+uint16_t bq79616_crc16(const uint8_t *data, uint16_t len)
 {
     uint16_t crc = 0xFFFFu;
     for (uint16_t i = 0; i < len; i++) {
@@ -78,174 +78,22 @@ uint16_t bq_crc16(const uint8_t *data, uint16_t len)
     return crc;
 }
 
-/* Alias used by TI reference code naming */
-uint16_t bq_crc16_ibm(const uint8_t *data, uint16_t len)
-{
-    return bq_crc16(data, len);
-}
-
 /* Validate per datasheet: CRC computed across entire frame including CRC must be 0 */
 int bq_crc_validate_full_frame(const uint8_t *frame, uint16_t frame_len)
 {
     if (!frame || frame_len < 2u) {
         return -1;
     }
-    if (bq_crc16(frame, frame_len) == 0u) {
+    if (bq79616_crc16(frame, frame_len) == 0u) {
         return 0;
     }
     return -2;
 }
-/* ----------------------------------------------------------------------------- */
-/* ----------------------------- WAKE SEQUENCE --------------------------------- */
-/* ----------------------------------------------------------------------------- */
-
-/* Wake bridge + stack, return 0 on success */
-int BQ_Wake(uint8_t stack_count)
-{
-    LOG_INFO("\n=== WAKE SEQUENCE TEST ===");
-
-    int wake_bq_status = BQ_WakeSequence(stack_count);
-    if (wake_bq_status != 0) {
-        LOG_ERROR("Wake sequence failed: bq_status=%ld", (long)wake_bq_status);
-        return (int)wake_bq_status;
-    }
-
-    // int init_bq_status = bq79616_stack_single_init();
-    // if (init_bq_status != 0) {
-    //     LOG_ERROR("Stack init failed: bq_status=%d", init_bq_status);
-    //     return init_bq_status;
-    // }
-
-    HAL_Delay(1000u); 
-    return 0;
-}
-
-/* ----- Wake-up ping ----- */
-void BQ79616_wake_ping(void){
-    /* Datasheet wake: hold TX low for ~2.75 ms, then restore UART */
-    HAL_UART_DeInit(&uart_bq79616);
-
-    bq_pin_tx_to_gpio();
-    bq_pin_tx_set(GPIO_LOW);
-    bq_delay_us(BQ_WAKE_PULSE_US);
-    bq_pin_tx_set(GPIO_HIGH);
-
-    if (bq_uart_reinit() != 0) {
-        Error_Handler();
-    }
-}
-
-int bq79616_direct_wake(void)
-{
-    LOG_INFO("\n=== WAKE SEQUENCE TEST ===");
-    LOG_INFO("Starting direct UART wake");
-
-    HAL_UART_DeInit(&uart_bq79616);
-
-    bq_pin_tx_to_gpio();
-    bq_pin_tx_set(GPIO_HIGH);
-
-    bq_drive_wake_pulse(BQ_WAKE_PULSE_US);
-
-    bq_delay_us(BQ_WAKE_POST_DELAY_US);
-
-    if (bq_uart_reinit() != 0) {
-        LOG_ERROR("UART reinit failed after wake");
-        return -1;
-    }
-
-    LOG_INFO("Direct UART wake complete");
-    return 0;
-}
-
-/* Full UART wake sequence: two pulses, bridge ACTIVE wait, SEND_WAKE */
-int BQ_WakeSequence(uint8_t stack_count)
-{
-
-    /*
-     * TI SLUUC56C UART wake procedure (BQ79600/BQ79616):
-     *  1) Temporarily release UART so the host can directly drive TX.
-     *  2) Drive TX low for 2.75 ms twice (separated by tSU(WAKE_SHUT)).
-     *  3) Wait tACTIVE so the bridge enters ACTIVE mode before UART traffic.
-     *  4) Restore UART alternate function and reinit the peripheral.
-     *  5) Issue CONTROL1[SEND_WAKE]=1 so the bridge forwards wake down-stack.
-     *  6) Wait 11.6 ms per stacked device for wake propagation.
-     */
-
-    LOG_INFO("Driving wake pulse 1");
-
-    HAL_UART_DeInit(&uart_bq79616);
-    bq_pin_tx_to_gpio();
-    bq_pin_tx_set(GPIO_PIN_SET); /* idle high before manual pulses */
-
-    /* First wake ping */
-    bq_drive_wake_pulse(BQ_WAKE_PULSE_US);
-
-    /* Required shutdown interval before second ping (TI sample waits ~12 ms) */
-    HAL_Delay(12u);
-
-    LOG_INFO("Driving wake pulse 2");
-    bq_drive_wake_pulse(BQ_WAKE_PULSE_US);
-
-    LOG_INFO("Reinitializing UART");
-    if (bq_uart_reinit() != 0) {
-        LOG_ERROR("UART reinit failed after wake pulses");
-        return -1;
-    }
-
-    /* Propagate wake to stacked devices via CONTROL1[SEND_WAKE] (broadcast) */
-    uint8_t control1 = BQ_CONTROL1_SEND_WAKE_MASK;
-    LOG_INFO("Sending CONTROL1[SEND_WAKE]");
-    (void)bq7961x_broadcast_write(CONTROL1, &control1, 1u, 1000u);
-
-    /* Optional COMM_CLEAR broadcast: clears UART state on all nodes */
-    uint8_t comm_clear = 0x00u;
-    (void)bq7961x_broadcast_write(CONTROL1, &comm_clear, 1u, 1000u);
-
-    /* Wait 11.6 ms per stacked device for wake propagation */
-    uint32_t prop_us = BQ_WAKE_PROP_DELAY_US_PER_DEV * (uint32_t)stack_count;
-    LOG_INFO("Waiting for stack wake propagation (%lu us)", (unsigned long)prop_us);
-    bq_delay_us(prop_us);
-
-    return 0;
-}
-
-/* Single-node stack init: wake tone + address + top-of-stack setup */
-int bq79616_stack_single_init(void)
-{
-    int bq_status;
-    uint8_t data;
-
-    /* Step 1: Wake tone + keep SEND_WAKE asserted alongside auto-address (bit0) */
-    data = (uint8_t)(BQ_CONTROL1_SEND_WAKE_MASK | 0x01u); /* 0x21: SEND_WAKE + AUTO_ADDR */
-    bq_status = bq79616_write(DEVICE_ADDR, CONTROL1, &data, 1u);
-    if (bq_status != 0) return bq_status;
-    HAL_Delay(12u);  /* Wait for propagation (11.6 ms) */
-
-    /* Step 2: Set device address to 0 */
-    data = 0x00u;
-    bq_status = bq79616_write(DEVICE_ADDR, DIR0_ADDR, &data, 1u);
-    if (bq_status != 0) return bq_status;
-
-    /* Step 3: Set as top-of-stack */
-    data = 0x03u;
-    bq_status = bq79616_write(DEVICE_ADDR, COMM_CTRL, &data, 1u);
-    if (bq_status != 0) return bq_status;
-
-    return 0;
-}
 
 
 
 
-// /* ----------------------------------------------------------------------------- */
-// /* --------------------------- READ CHANNEL VOLTAGE ---------------------------- */
-// /* ----------------------------------------------------------------------------- */
-// int BQ_Read_Channel_Voltage( adc_channel)
-// {
-//     // Implementation for reading channel voltage
-//     return 0;
-// }
+
 
 
 
@@ -321,10 +169,7 @@ int bq_uart_txrx(const uint8_t *tx, uint16_t tx_len, uint8_t *rx, uint16_t rx_le
 }
 
 /* Public single-device wrappers */
-int bq79616_write(uint8_t dev_id,
-                  uint16_t reg_addr,
-                  const uint8_t *data,
-                  uint8_t len)
+int bq79616_write(uint8_t dev_id, uint16_t reg_addr, const uint8_t *data, uint8_t len)
 {
     return bq7961x_single_write(dev_id, reg_addr, data, len, 1000u);
 }
@@ -446,11 +291,7 @@ void bq_log_hex(const char *label, const uint8_t *buf, size_t len)
 
 /* ---------------------- Frame builder (command frames) -------------------- */
 
-int bq79616_build_single_read_frame(uint16_t reg_addr,
-                                    uint8_t n_minus_1,
-                                    uint8_t *out,
-                                    size_t out_max,
-                                    size_t *out_len)
+int bq79616_build_single_read_frame(uint16_t reg_addr, uint8_t n_minus_1, uint8_t *out, size_t out_max, size_t *out_len)
 {
     if (!out || !out_len) {
         return -1;
@@ -466,7 +307,7 @@ int bq79616_build_single_read_frame(uint16_t reg_addr,
     out[4] = n_minus_1; /* number of bytes to read minus one */
 
     /* CRC-16-IBM across bytes [0..4], appended as [CRC_H][CRC_L] */
-    uint16_t crc = bq_crc16_ibm(out, 5u);
+    uint16_t crc = bq79616_crc16(out, 5u);
     out[5] = (uint8_t)((crc >> 8) & 0xFFu);
     out[6] = (uint8_t)(crc & 0xFFu);
 
@@ -493,14 +334,7 @@ int bq79616_read_partid_once(uint8_t *partid_out)
     return (val == BQ_PARTID_EXPECTED) ? 0 : 1;
 }
 
-int bq_build_cmd_frame(uint8_t *out,
-                              uint16_t out_max,
-                              bq_req_type_t req,
-                              uint8_t dev_addr,         /* used only for SINGLE commands */
-                              uint16_t reg_addr,
-                              const uint8_t *data,
-                              uint16_t data_len,        /* writes: 1..8; reads: must be 1 */
-                              uint16_t *out_len)
+int bq_build_cmd_frame(uint8_t *out, uint16_t out_max, bq_req_type_t req, uint8_t dev_addr, uint16_t reg_addr, const uint8_t *data, uint16_t data_len, uint16_t *out_len)
 {
     if (!out || !out_len) return -1;
     *out_len = 0u;
@@ -550,7 +384,7 @@ int bq_build_cmd_frame(uint8_t *out,
      *   CRC remainder is appended so receiver CRC over entire frame (incl CRC) becomes 0.
      * We append CRC LSB then CRC MSB (matches TI ref style / common IBM CRC framing).
      */
-    uint16_t crc = bq_crc16(out, idx);
+    uint16_t crc = bq79616_crc16(out, idx);
     out[idx++] = (uint8_t)(crc & 0xFFu);         /* CRC_L */
     out[idx++] = (uint8_t)((crc >> 8) & 0xFFu);  /* CRC_H */
 
@@ -559,11 +393,7 @@ int bq_build_cmd_frame(uint8_t *out,
 }
 
 /* ---------------------- Internal send command APIs ------------------------ */
-int bq7961x_single_write(uint8_t dev_addr,
-                         uint16_t reg_addr,
-                         const uint8_t *data,
-                         uint8_t len,
-                         uint32_t timeout_ms)
+int bq7961x_single_write(uint8_t dev_addr, uint16_t reg_addr, const uint8_t *data, uint8_t len, uint32_t timeout_ms)
 {
     if (len < 1u || len > 8u) return -1;
 
@@ -580,11 +410,7 @@ int bq7961x_single_write(uint8_t dev_addr,
     return bq_uart_tx(tx_buf, frame_len, timeout_ms);
 }
 
-int bq7961x_single_read(uint8_t dev_addr,
-                        uint16_t reg_addr,
-                        uint8_t *out,
-                        uint8_t out_len,
-                        uint32_t timeout_ms)
+int bq7961x_single_read(uint8_t dev_addr, uint16_t reg_addr, uint8_t *out, uint8_t out_len, uint32_t timeout_ms)
 {
     if (!out) return -1;
     if (out_len < 1u || out_len > BQ_READ_MAX_BYTES) return -2;
@@ -657,61 +483,12 @@ int bq7961x_single_read(uint8_t dev_addr,
     return 0;
 }
 
-int bq7961x_stack_read(uint8_t dev_addr,
-                              uint16_t reg_addr,
-                              uint8_t *out,
-                              uint8_t out_len,
-                              uint32_t timeout_ms)
-{
-    /* Stack read here reuses the single-read helper; kept for clarity */
-    return bq7961x_single_read(dev_addr, reg_addr, out, out_len, timeout_ms);
-}
 
-int bq7961x_stack_write(uint16_t reg_addr,
-                        const uint8_t *data,
-                        uint8_t len,
-                        uint32_t timeout_ms)
-{
-    if (len < 1u || len > 8u) return -1;
 
-    uint16_t frame_len = 0u;
-    int bq_status = bq_build_cmd_frame(tx_buf, sizeof(tx_buf),
-                                BQ_REQ_STACK_WRITE,
-                                0u,
-                                reg_addr,
-                                data,
-                                len,
-                                &frame_len);
-    if (bq_status != 0) return bq_status;
 
-    return bq_uart_tx(tx_buf, frame_len, timeout_ms);
-}
 
-int bq7961x_stack_read_request(uint16_t reg_addr,
-                               uint8_t bytes_to_return,
-                               uint32_t timeout_ms)
-{
-    if (bytes_to_return < 1u || bytes_to_return > BQ_READ_MAX_BYTES) return -1;
 
-    uint8_t req_data = (uint8_t)(bytes_to_return - 1u);
-
-    uint16_t frame_len = 0u;
-    int bq_status = bq_build_cmd_frame(tx_buf, sizeof(tx_buf),
-                                BQ_REQ_STACK_READ,
-                                0u,
-                                reg_addr,
-                                &req_data,
-                                1u,
-                                &frame_len);
-    if (bq_status != 0) return bq_status;
-
-    return bq_uart_tx(tx_buf, frame_len, timeout_ms);
-}
-
-int bq7961x_broadcast_write(uint16_t reg_addr,
-                            const uint8_t *data,
-                            uint8_t len,
-                            uint32_t timeout_ms)
+int bq7961x_broadcast_write(uint16_t reg_addr, const uint8_t *data, uint8_t len, uint32_t timeout_ms)
 {
     if (len < 1u || len > 8u) return -1;
 
@@ -728,47 +505,8 @@ int bq7961x_broadcast_write(uint16_t reg_addr,
     return bq_uart_tx(tx_buf, frame_len, timeout_ms);
 }
 
-int bq7961x_broadcast_write_reverse(uint16_t reg_addr,
-                                    const uint8_t *data,
-                                    uint8_t len,
-                                    uint32_t timeout_ms)
-{
-    if (len < 1u || len > 8u) return -1;
-
-    uint16_t frame_len = 0u;
-    int bq_status = bq_build_cmd_frame(tx_buf, sizeof(tx_buf),
-                                BQ_REQ_BROADCAST_WRITE_REV,
-                                0u,
-                                reg_addr,
-                                data,
-                                len,
-                                &frame_len);
-    if (bq_status != 0) return bq_status;
-
-    return bq_uart_tx(tx_buf, frame_len, timeout_ms);
-}
-
-int bq7961x_broadcast_write_consecutive(uint16_t reg_addr,
-                                               uint8_t stack_count,
-                                               uint32_t timeout_ms)
-{
-    /* Datasheet consecutive auto-address: broadcast starting at 0 */
-    (void)stack_count; /* reserved for future per-device verification */
-    uint8_t start_addr = 0u;
-    return bq7961x_broadcast_write(reg_addr, &start_addr, 1u, timeout_ms);
-}
-
-/* ---------------------- Convenience init (optional) ------------------------ */
-
-int bq7961x_uart_init(void)
-{
-    memset(tx_buf, 0, sizeof(tx_buf));
-    memset(rx_buf, 0, sizeof(rx_buf));
-    return 0;
-}
-
 /* TI-style wake helper */
-void Wake79616(void)
+void bq79616_wake(void)
 {
     /* Two 2.5 ms low pulses with UART temporarily released */
     HAL_UART_DeInit(&uart_bq79616);
@@ -791,7 +529,7 @@ void Wake79616(void)
 }
 
 /* Read cell voltage from ADC (keeps device ACTIVE via periodic communication) */
-int BQ79616_read_cell_voltage(uint8_t dev_addr, uint8_t cell_channel, uint16_t *voltage_mv)
+int bq79616_read_cell_voltage(uint8_t dev_addr, uint8_t cell_channel, uint16_t *voltage_mv)
 {
     int bq_status;
     uint8_t data[2] = {0};
@@ -819,7 +557,7 @@ int BQ79616_read_cell_voltage(uint8_t dev_addr, uint8_t cell_channel, uint16_t *
 }
 
 //TODO: Fix and use an interrupt not the last time
-bool BQ_ServiceTask(void) 
+bool bq79616_service_task(void)
 {
     static uint32_t last_keep_alive = 0;
     static uint32_t fault_check_tick = 0;
@@ -1088,10 +826,10 @@ int WriteReg(uint8_t bID, uint16_t wAddr, uint64_t dwData, uint8_t bLen, uint8_t
         return bq7961x_single_write(bID, wAddr, buf, bLen, BQ_FAST_TIMEOUT_MS);
     case FRMWRT_ALL_W:
         return bq7961x_broadcast_write(wAddr, buf, bLen, BQ_FAST_TIMEOUT_MS);
-    case FRMWRT_STK_W:
-        return bq7961x_stack_write(wAddr, buf, bLen, BQ_FAST_TIMEOUT_MS);
-    case FRMWRT_REV_ALL_W:
-        return bq7961x_broadcast_write_reverse(wAddr, buf, bLen, BQ_FAST_TIMEOUT_MS);
+    // case FRMWRT_STK_W:
+    //     return bq7961x_stack_write(wAddr, buf, bLen, BQ_FAST_TIMEOUT_MS);
+    // case FRMWRT_REV_ALL_W:
+    //     return bq7961x_broadcast_write_reverse(wAddr, buf, bLen, BQ_FAST_TIMEOUT_MS);
     default:
         return -2;
     }
@@ -1123,7 +861,7 @@ int ReadReg(uint8_t bID, uint16_t wAddr, uint8_t *pData, uint8_t bLen, uint32_t 
     pData[3] = (uint8_t)(wAddr & 0xFFu);
     memcpy(&pData[4], payload, bLen);
 
-    uint16_t crc = bq_crc16(pData, (uint16_t)(4u + bLen));
+    uint16_t crc = bq79616_crc16(pData, (uint16_t)(4u + bLen));
     pData[4 + bLen] = (uint8_t)(crc & 0xFFu);
     pData[5 + bLen] = (uint8_t)((crc >> 8) & 0xFFu);
 
@@ -1138,17 +876,6 @@ void ResetAllFaults(uint8_t bID, uint8_t bWriteType)
         (void)WriteReg(0u, FAULT_RST1, rst_val, 2u, FRMWRT_ALL_W);
     } else {
         (void)WriteReg(DEVICE_ADDR, FAULT_RST1, rst_val, 2u, FRMWRT_SGL_W);
-    }
-}
-
-void MaskAllFaults(uint8_t bID, uint8_t bWriteType)
-{
-    uint64_t mask = 0xFFFFu; /* two bytes */
-    (void)bID;
-    if (bWriteType == FRMWRT_ALL_W) {
-        (void)WriteReg(0u, FAULT_MSK1, mask, 2u, FRMWRT_ALL_W);
-    } else {
-        (void)WriteReg(DEVICE_ADDR, FAULT_MSK1, mask, 2u, FRMWRT_SGL_W);
     }
 }
 
@@ -1217,7 +944,7 @@ int bq79616_init_device(void)
     int status;
 
     /* Two wake tones (TI sample calls Wake twice) */
-    Wake79616();
+    bq79616_wake();
 
     /* Allow settle after shutdown->active transition */
     bq_delay_us(4000u);
@@ -1230,20 +957,16 @@ int bq79616_init_device(void)
     return status;
 }
 
-/* TI compatibility wrapper */
-void AutoAddress(void)
-{
-    (void)bq79616_auto_address_single();
-}
 
-bool BQ_TryInit(void)
+
+bool bq79616_try_init(void)
 {
     int bq_status;
     int clear_status;
     uint8_t partid = 0u;
 
     /* Keep this path tolerant: BQ is optional for thermistor CAN operation. */
-    AutoAddress();
+    bq79616_auto_address_single();
 
     bq_status = bq79616_init_device();
     if (bq_status != 0) {

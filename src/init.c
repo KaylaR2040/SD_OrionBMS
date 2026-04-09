@@ -19,8 +19,8 @@ void System_AppInit(void)
     clocks_configure_all();  /* Board-specific clock tree helpers */
     ADC_App_Init();          /* Initialize internal ADC driver */
     CAN_App_Init(CAN_APP_DEFAULT_KBPS); /* Start FDCAN at the project-configured bitrate */
-    UART_Stlink_Init();      /* Console/logging UART (LPUART1 or USART1) */
-    UART_BQ79616_Init(1000000U);     /* BQ79616 transport UART on USART1 (PC4/PC5) */
+    UART_Stlink_Init();               /* Console/logging UART on USART2 (PA2/PA3) */
+    UART_BQ79616_Init(1000000U);      /* BQ79616 transport UART on USART1 (PC4/PC5) */
     // UART_BQ79616_Init(115200U);     /* BQ79616 transport UART on USART1 (PC4/PC5) */
     Timers_Init();           /* Start hardware timers for periodic tasks */
 

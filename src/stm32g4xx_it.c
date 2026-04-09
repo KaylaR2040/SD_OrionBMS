@@ -42,18 +42,11 @@ void FDCAN1_IT1_IRQHandler(void)
     HAL_FDCAN_IRQHandler(&g_fdcan1);
 }
 
-/* UART interrupt handlers used by logging interface */
-#if LOG_UART_USE_LPUART1
-void LPUART1_IRQHandler(void)
+/* UART interrupt handler used by logging interface (USART2 -> PA2/PA3) */
+void USART2_IRQHandler(void)
 {
     HAL_UART_IRQHandler(&uart_stlink);
 }
-#else
-void USART1_IRQHandler(void)
-{
-    HAL_UART_IRQHandler(&uart_stlink);
-}
-#endif
 
 /* TIM6 global interrupt handler */
 extern TIM_HandleTypeDef g_htim6;

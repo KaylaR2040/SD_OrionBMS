@@ -2,8 +2,8 @@
  * ===========================================================================
  * File: uart.c
  * Description: Consolidated UART support:
- *   - USART1 (ST-Link VCP) for console logging
- *   - USART2 for BQ79616 transport
+ *   - USART2 on PA2 (TX) / PA3 (RX) for console logging
+ *   - USART1 on PC4 (TX) / PC5 (RX) for BQ79616 transport
  * ===========================================================================
  */
 
@@ -32,7 +32,9 @@ static const char *const level_colors[LOG_LEVEL_COUNT] = {
     LOG_COLOR_DEBUG
 };
 
-/* Initialize logging UART: LPUART1 (PA2/PA3) by default, or USART1 (PC4/PC5) when LOG_UART_USE_LPUART1=0 */
+/* Initialize logging UART on USART2 -> PA2/PA3 (AF7). Pin mapping is set in
+ * HAL_UART_MspInit (src/stm32g4xx_hal_msp.c).
+ */
 void UART_Stlink_Init(void)
 {
 #if !UART_LOG_ENABLED
@@ -40,6 +42,7 @@ void UART_Stlink_Init(void)
     return;
 #endif
 
+    /* Logging UART is USART2 => PA2/PA3 (AF7) per HAL_UART_MspInit. */
     uart_stlink.Instance = USART2;
     uart_stlink.Init.BaudRate = 115200;
     uart_stlink.Init.WordLength = UART_WORDLENGTH_8B;
@@ -48,10 +51,6 @@ void UART_Stlink_Init(void)
     uart_stlink.Init.Mode = UART_MODE_TX_RX;
     uart_stlink.Init.HwFlowCtl = UART_HWCONTROL_NONE;
     uart_stlink.Init.OverSampling = UART_OVERSAMPLING_16;
-#if LOG_UART_USE_LPUART1
-    uart_stlink.Init.OneBitSampling = UART_ONE_BIT_SAMPLE_DISABLE;
-    uart_stlink.AdvancedInit.AdvFeatureInit = UART_ADVFEATURE_NO_INIT;
-#endif
     if (HAL_UART_Init(&uart_stlink) != HAL_OK) {
         Error_Handler();
     }
