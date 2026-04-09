@@ -27,13 +27,15 @@
 #include <stdbool.h>
 #include <stdarg.h>
 
+// Logging Status Flag used to enable or disable Logging if there are prehiperal issues
+extern volatile bool log_status;
+
 /* Console/logging UART (USART2 via ST-Link) */
 extern UART_HandleTypeDef uart_stlink;
 
 /* BQ79616 transport UART (USART1) */
 extern UART_HandleTypeDef uart_bq79616;
 
-#define UART_LOG_ENABLED 1
 
 typedef enum {
     LOG_LEVEL_INFO = 0,

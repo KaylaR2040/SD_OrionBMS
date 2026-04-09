@@ -37,10 +37,6 @@ static const char *const level_colors[LOG_LEVEL_COUNT] = {
  */
 void UART_Stlink_Init(void)
 {
-#if !UART_LOG_ENABLED
-    log_uart = NULL;
-    return;
-#endif
 
     /* Logging UART is USART2 => PA2/PA3 (AF7) per HAL_UART_MspInit. */
     uart_stlink.Instance = USART2;
@@ -52,11 +48,13 @@ void UART_Stlink_Init(void)
     uart_stlink.Init.HwFlowCtl = UART_HWCONTROL_NONE;
     uart_stlink.Init.OverSampling = UART_OVERSAMPLING_16;
     if (HAL_UART_Init(&uart_stlink) != HAL_OK) {
+        log_status = FAILED;
         Error_Handler();
+    } else {
+        log_status = ACTIVE;
+        /* Point the logging layer at the initialized UART. */
+        Log_Init(&uart_stlink);
     }
-
-    /* Point the logging layer at the initialized UART. */
-    Log_Init(&uart_stlink);
 }
 
 /* Configure BQ79616 UART on PC4 (TX) / PC5 (RX) via USART1 */
@@ -85,7 +83,7 @@ void Log_Init(UART_HandleTypeDef *huart)
 /* Emit a formatted, colorized log line over UART */
 void Log_Printf(log_level_t level, const char *fmt, ...)
 {
-    if (!UART_LOG_ENABLED || !log_uart || level >= LOG_LEVEL_COUNT || fmt == NULL) {
+    if (!log_uart || level >= LOG_LEVEL_COUNT || fmt == NULL) {
         return;
     }
 
