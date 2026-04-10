@@ -42,9 +42,9 @@ int main(void)
     while (true) {
 
         /* Thermistor pipeline has priority and must always run. */
-        ADC_ServiceTask();
+        Therm_ServiceTask();
         CAN_ServiceTask();
-        bq79616_service_task();
+        Volt_ServiceTask();
         
     }
 }

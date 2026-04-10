@@ -38,7 +38,6 @@
 #define FAILED false
 
 /* Project headers */
-#include "adc.h"
 #include "bq79616.h"
 #include "can.h"
 #include "can_messages.h"
@@ -48,8 +47,10 @@
 #include "init.h"
 #include "led.h"
 #include "main.h"
+#include "therm.h"
 #include "thermistor_table.h"
 #include "timer.h"
 #include "uart.h"
+#include "volt.h"
 
 #endif /* MASTER_H */

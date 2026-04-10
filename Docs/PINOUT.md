@@ -24,13 +24,13 @@ Single consolidated map, grouped by peripheral/function. AF values match the HAL
 | GPIO    | Spare / analog header        | PB13   | GPIO/Analog        | Unused |
 | ADC1    | IN1 (Thermistor 1)           | PA0    | Analog             | ADC_CHANNEL_1 |
 | ADC1    | IN2 (Thermistor 2)           | PA1    | Analog             | ADC_CHANNEL_2 |
+| ADC1    | IN11 (Thermistor 3)          | PB12   | Analog             | ADC_CHANNEL_11 |
+| ADC1    | IN14 (Thermistor 4)          | PB11   | Analog             | ADC_CHANNEL_14 |
 | ADC1    | IN5 (Thermistor 5)           | PB14   | Analog             | ADC_CHANNEL_5 |
 | ADC1    | IN6 (Thermistor 6)           | PC0    | Analog             | ADC_CHANNEL_6 |
 | ADC1    | IN7 (Thermistor 7)           | PC1    | Analog             | ADC_CHANNEL_7 |
 | ADC1    | IN8 (Thermistor 8)           | PC2    | Analog             | ADC_CHANNEL_8 |
 | ADC1    | IN9 (Thermistor 9)           | PC3    | Analog             | ADC_CHANNEL_9 |
-| ADC1    | IN11 (Thermistor 3)          | PB12   | Analog             | ADC_CHANNEL_11 |
-| ADC1    | IN14 (Thermistor 4)          | PB11   | Analog             | ADC_CHANNEL_14 |
 | ADC1    | IN15 (Thermistor 10)         | PB0    | Analog             | ADC_CHANNEL_15 |
 
 Notes

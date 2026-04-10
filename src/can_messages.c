@@ -7,7 +7,7 @@
  */
 
 #include "master.h"
-#include "adc.h" /* for ADC_REF_MV and ADC_MAX_COUNTS */
+#include "therm.h" /* for THERM_REF_MV and THERM_MAX_COUNTS */
 
 #define THERM_HOT_C 65
 #define CAN_DEBUG_EMU_MODULES              2u
@@ -245,7 +245,7 @@ static void CAN_BuildModuleCacheFromAdc(uint8_t start_idx,
         }
 
         if (therm_too_hot) {
-            const uint32_t millivolts = ((uint32_t)adc_raw * (uint32_t)ADC_REF_MV) / (uint32_t)ADC_MAX_COUNTS;
+            const uint32_t millivolts = ((uint32_t)adc_raw * (uint32_t)THERM_REF_MV) / (uint32_t)THERM_MAX_COUNTS;
             LOG_WARN("Thermistor %u too hot: %dC (adc=%u, %lu.%03lu V)",
                      (unsigned)(abs_idx + 1U), (int)temp_c,
                      (unsigned)adc_raw,
@@ -330,7 +330,7 @@ void ConvertAllThermistors(const uint16_t *adc_values, uint8_t count)
         /* Track over-temperature separately from invalid-sensor faults.
          * Over-temp must remain valid in CAN stats so BMS can report a hot condition. */
         if (!therm_fault && temp_c > THERM_HOT_C) {
-            const uint32_t millivolts = ((uint32_t)adc_raw * (uint32_t)ADC_REF_MV) / (uint32_t)ADC_MAX_COUNTS;
+            const uint32_t millivolts = ((uint32_t)adc_raw * (uint32_t)THERM_REF_MV) / (uint32_t)THERM_MAX_COUNTS;
             LOG_WARN("Thermistor %u too hot: %dC (adc=%u, %lu.%03lu V)",
                      (unsigned)(i + 1U), (int)temp_c,
                      (unsigned)adc_raw,
