@@ -557,7 +557,7 @@ int bq79616_read_cell_voltage(uint8_t dev_addr, uint8_t cell_channel, uint16_t *
 }
 
 //TODO: Fix and use an interrupt not the last time
-bool bq79616_service_task(void)
+bool bq79616_service_task(void) // Uses BQ79616 Chip to externally read Voltages
 {
     /* Check if voltage subsystem is already disabled */
     if (volt_status == FAILED) {

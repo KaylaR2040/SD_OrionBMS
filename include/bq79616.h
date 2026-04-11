@@ -24,6 +24,8 @@
 
 #include "B0_reg.h"
 
+#define BQ_BAUDRATE 1000000U /* BQ79616 supports baudrate of 1 Mbps */
+
 #define BQ_GPIO_PORT GPIOC
 #define BQ_GPIO_PIN GPIO_PIN_4
 

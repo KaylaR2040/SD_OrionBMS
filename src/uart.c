@@ -58,10 +58,10 @@ void UART_Stlink_Init(void)
 }
 
 /* Configure BQ79616 UART on PC4 (TX) / PC5 (RX) via USART1 */
-void UART_BQ79616_Init(uint32_t baudrate)
+void UART_BQ79616_Init(void)
 {
     uart_bq79616.Instance = USART1;
-    uart_bq79616.Init.BaudRate = baudrate; /* BQ79616 supports baudrate of 1 Mbps */
+    uart_bq79616.Init.BaudRate = BQ_BAUDRATE; /* BQ79616 supports baudrate of 1 Mbps */
     uart_bq79616.Init.WordLength = UART_WORDLENGTH_8B;
     uart_bq79616.Init.StopBits = UART_STOPBITS_1;
     uart_bq79616.Init.Parity = UART_PARITY_NONE;

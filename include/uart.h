@@ -57,7 +57,7 @@ typedef enum {
 
 /* Initialization */
 void UART_Stlink_Init(void);
-void UART_BQ79616_Init(uint32_t baudrate);
+void UART_BQ79616_Init(void);
 
 /* Logging helpers (console channel only) */
 void Log_Init(UART_HandleTypeDef *huart);

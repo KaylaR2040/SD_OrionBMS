@@ -34,11 +34,6 @@ int main(void)
     System_AppInit();
     LED_All_Pulse(1000u);
 
-    bq_is_active = bq79616_try_init();
-    if (!bq_is_active) {
-        volt_status = FAILED;
-    }
-
     while (true) {
 
         /* Thermistor pipeline has priority and must always run. */
