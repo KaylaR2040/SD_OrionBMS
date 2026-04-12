@@ -17,7 +17,7 @@ Single consolidated map, grouped by peripheral/function. AF values match the HAL
 | SPI     | SPI1 CS (software)           | PA4    | 18    | GPIO output        | MAX17841B chip select (manual) |
 | LED     | LED1                         | PA9    | 43    | GPIO output        | Active high |
 | LED     | LED2                         | PA8    | 42    | GPIO output        | Active high |
-| LED     | LED3                         | PC9    | 40    | GPIO output        | Active high |
+| LED     | LED3                         | PC9    | 41    | GPIO output        | Active high |
 | GPIO    | Spare                        | PC6    | 37    | GPIO               | Unused |
 | GPIO    | Spare / analog header        | PB15   | 36    | GPIO/Analog        | Unused |
 | GPIO    | Spare / analog header        | PB13   | 34    | GPIO/Analog        | Unused |
