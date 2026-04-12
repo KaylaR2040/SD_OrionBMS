@@ -30,19 +30,11 @@
 /** Primary ADC handle used across the application. */
 ADC_HandleTypeDef hadc1;
 
-/** Milliseconds to wait before running the thermistor task for the first time. */
-#define THERM_TASK_INITIAL_DELAY_MS 0U
-
-/* Fast sampling to feed CAN cache (non-blocking) */
+/* Sampling happens immediately and continuously in the service loop */
 #define THERM_SAMPLE_PERIOD_MS      100U
 
-/* Human-readable thermistor dumps use cached values so they stay visible but light. */
+/* Human-readable thermistor dumps use logging interrupt flags */
 #define THERM_ENABLE_PERIODIC_LOG   1
-#define THERM_LOG_PERIOD_MS         2000U
-
-/** Next scheduled timestamps for sampling and logging. */
-static uint32_t g_therm_next_sample_ms = 0U;
-static uint32_t g_therm_next_log_ms = 0U;
 
 static void Therm_DelayForSettling(void);
 static HAL_StatusTypeDef Therm_PerformConversion(uint16_t *result);
@@ -197,7 +189,7 @@ void Therm_LogCachedSnapshot(void)
 }
 
 /* Execute the thermistor periodic task that toggles LEDs and logs samples */
-//TODO: This should be changed to use an interrupt instead of the next sample timing. 
+/* Execute the thermistor periodic task - samples continuously, logs on offset 0 interrupt */
 void Therm_ServiceTask(void)
 {
     /* Check if thermistor subsystem is active */
@@ -205,19 +197,9 @@ void Therm_ServiceTask(void)
         return;
     }
 
-    const uint32_t now_ms = HAL_GetTick();
-
-    if (g_therm_next_sample_ms == 0U) {
-        g_therm_next_sample_ms = now_ms + THERM_TASK_INITIAL_DELAY_MS;
-#if THERM_ENABLE_PERIODIC_LOG
-        g_therm_next_log_ms = now_ms + THERM_LOG_PERIOD_MS;
-#endif
-    }
-
-    /* Fast path: refresh thermistor + temperature cache on a short period for CAN */
-    if ((int32_t)(now_ms - g_therm_next_sample_ms) >= 0) {
-        uint16_t samples[THERM_APP_CHANNEL_COUNT] = {0};
-        Therm_App_SampleAll(samples);
+    /* Sample immediately and continuously to feed CAN cache with fresh data */
+    uint16_t samples[THERM_APP_CHANNEL_COUNT] = {0};
+    Therm_App_SampleAll(samples);
 
         for (uint8_t i = 0U; i < THERM_APP_CHANNEL_COUNT && i < MAX_THERMISTORS; i++) {
             g_can_ctx.thermistors.thermistor_adc_values[i] = samples[i];
@@ -231,16 +213,12 @@ void Therm_ServiceTask(void)
         ConvertAllThermistors(g_can_ctx.thermistors.thermistor_adc_values,
                               g_can_ctx.thermistors.num_active);
 
+    /* Logging only happens when interrupt flag fires (offset 0: every 1s, 4s, 7s...) */
 #if THERM_ENABLE_PERIODIC_LOG
-        if ((int32_t)(now_ms - g_therm_next_log_ms) >= 0) {
-            Therm_LogCachedSnapshot();
-            g_therm_next_log_ms = now_ms + THERM_LOG_PERIOD_MS;
-        }
-#endif
-
-        g_therm_next_sample_ms = now_ms + THERM_SAMPLE_PERIOD_MS;
+    if (Timer_CheckLogOffset0Flag()) {
+        Therm_LogCachedSnapshot();
     }
-
+#endif
 }
 
 /* Burn cycles so the sampling cap settles after a channel switch */

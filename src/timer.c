@@ -19,6 +19,11 @@ volatile bool g_flag_bq_wake = false;
 volatile bool g_flag_can_100ms = false;
 volatile bool g_flag_can_200ms = false;
 
+/* Logging flags with 1-second cycle offsets (for staggered subsystem logging) */
+volatile bool g_flag_log_1s_offset0 = false;  /* Fires at 1s, 4s, 7s... (Therm logs) */
+volatile bool g_flag_log_1s_offset1 = false;  /* Fires at 2s, 5s, 8s... (Volt logs) */
+volatile bool g_flag_log_1s_offset2 = false;  /* Fires at 3s, 6s, 9s... (CAN logs) */
+
 static volatile uint32_t s_counter_100ms = 0u;
 static volatile uint32_t s_counter_200ms = 0u;
 static volatile uint32_t s_counter_10us = 0u;
@@ -28,6 +33,11 @@ static volatile uint32_t s_isr_call_count = 0u;  /* DEBUG: count TIM6 ISR calls 
 /* TIM7 CAN timer counters */
 static volatile uint32_t s_can_counter_100ms = 0u;
 static volatile uint32_t s_can_counter_200ms = 0u;
+
+/* Logging cycle: 1000ms counter with 3 offset states (0->1->2->0) */
+static volatile uint32_t s_counter_1000ms = 0u;
+static volatile uint8_t  s_log_cycle_offset = 0u;  /* Tracks which 1-second offset we're in (0, 1, or 2) */
+#define TICKS_FOR_1000MS  100u  /* 10ms * 100 = 1000ms */
 
 // Init all timers
 void Timers_Init(void)
@@ -157,6 +167,22 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
             s_counter_200ms = 0u;
             g_flag_200ms = true;
         }
+
+        /* Logging cycle: 1-second counter with 3-state offset cycle */
+        s_counter_1000ms++;
+        if (s_counter_1000ms >= TICKS_FOR_1000MS) {
+            s_counter_1000ms = 0u;
+            /* Set flag based on current offset in the 3-second cycle */
+            if (s_log_cycle_offset == 0u) {
+                g_flag_log_1s_offset0 = true;  /* Therm logs */
+            } else if (s_log_cycle_offset == 1u) {
+                g_flag_log_1s_offset1 = true;  /* Volt logs */
+            } else if (s_log_cycle_offset == 2u) {
+                g_flag_log_1s_offset2 = true;  /* CAN logs */
+            }
+            /* Advance to next offset in the 3-second cycle */
+            s_log_cycle_offset = (s_log_cycle_offset + 1u) % 3u;
+        }
     }
 
     /* TIM7: Dedicated CAN message timing (independent from main loop) */
@@ -216,6 +242,33 @@ bool Timer_CheckCan200msFlag(void)
 {
     if (g_flag_can_200ms) {
         g_flag_can_200ms = false;
+        return true;
+    }
+    return false;
+}
+
+bool Timer_CheckLogOffset0Flag(void)
+{
+    if (g_flag_log_1s_offset0) {
+        g_flag_log_1s_offset0 = false;
+        return true;
+    }
+    return false;
+}
+
+bool Timer_CheckLogOffset1Flag(void)
+{
+    if (g_flag_log_1s_offset1) {
+        g_flag_log_1s_offset1 = false;
+        return true;
+    }
+    return false;
+}
+
+bool Timer_CheckLogOffset2Flag(void)
+{
+    if (g_flag_log_1s_offset2) {
+        g_flag_log_1s_offset2 = false;
         return true;
     }
     return false;

@@ -566,9 +566,6 @@ bool bq79616_service_task(void) // Uses BQ79616 Chip to externally read Voltages
 
     static uint32_t last_keep_alive = 0;
     static uint32_t fault_check_tick = 0;
-    static uint32_t last_alive_log_tick = 0;
-    static uint32_t last_cell_log_tick = 0;
-    static uint32_t last_cell_log_fail_tick = 0;
     static uint8_t consecutive_comm_failures = 0u;
     uint32_t now = HAL_GetTick();
     
@@ -622,17 +619,12 @@ bool bq79616_service_task(void) // Uses BQ79616 Chip to externally read Voltages
         }
     }
 
-    if ((now - last_alive_log_tick) >= 2000u) {
-        last_alive_log_tick = now;
+    /* Logging only happens when interrupt flag fires (offset 1: every 2s, 5s, 8s...) */
+    if (Timer_CheckLogOffset1Flag()) {
         LOG_INFO("BQ service alive");
-    }
-
-    if ((now - last_cell_log_tick) >= 2000u) {
+        
         uint16_t cell_mv[16] = {0};
-        int cell_status;
-
-        last_cell_log_tick = now;
-        cell_status = bq79616_read_all_cells(cell_mv, 16u);
+        int cell_status = bq79616_read_all_cells(cell_mv, 16u);
         if (cell_status == 0) {
             LOG_INFO("BQ cell mV: "
                      "1:%u 2:%u 3:%u 4:%u 5:%u 6:%u 7:%u 8:%u "
@@ -641,8 +633,7 @@ bool bq79616_service_task(void) // Uses BQ79616 Chip to externally read Voltages
                      cell_mv[4], cell_mv[5], cell_mv[6], cell_mv[7],
                      cell_mv[8], cell_mv[9], cell_mv[10], cell_mv[11],
                      cell_mv[12], cell_mv[13], cell_mv[14], cell_mv[15]);
-        } else if ((now - last_cell_log_fail_tick) >= 2000u) {
-            last_cell_log_fail_tick = now;
+        } else {
             LOG_WARN("BQ cell read failed (bq_status=%d)", cell_status);
         }
     }

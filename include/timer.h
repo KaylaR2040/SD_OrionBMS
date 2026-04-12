@@ -72,6 +72,11 @@ extern volatile bool g_flag_bq_wake;
 extern volatile bool g_flag_can_100ms;
 extern volatile bool g_flag_can_200ms;
 
+/** Logging flags with 1-second cycle offsets (staggered subsystem logging) */
+extern volatile bool g_flag_log_1s_offset0;  /* Therm logs at 1s, 4s, 7s... */
+extern volatile bool g_flag_log_1s_offset1;  /* Volt logs at 2s, 5s, 8s... */
+extern volatile bool g_flag_log_1s_offset2;  /* CAN logs at 3s, 6s, 9s... */
+
 /* -------------------------------------------------------------------------- */
 /* Function Declarations                                                      */
 /* -------------------------------------------------------------------------- */
@@ -112,6 +117,24 @@ bool Timer_CheckCan100msFlag(void);
  * @return true if 200ms interval has elapsed, false otherwise
  */
 bool Timer_CheckCan200msFlag(void);
+
+/**
+ * @brief Check if logging offset 0 (1s, 4s, 7s...) flag is set and clear it
+ * @return true if it's Therm's turn to log, false otherwise
+ */
+bool Timer_CheckLogOffset0Flag(void);
+
+/**
+ * @brief Check if logging offset 1 (2s, 5s, 8s...) flag is set and clear it
+ * @return true if it's Volt's turn to log, false otherwise
+ */
+bool Timer_CheckLogOffset1Flag(void);
+
+/**
+ * @brief Check if logging offset 2 (3s, 6s, 9s...) flag is set and clear it
+ * @return true if it's CAN's turn to log, false otherwise
+ */
+bool Timer_CheckLogOffset2Flag(void);
 
 /**
  * @brief Debug: Print internal counter state to verify 100ms/200ms timing
