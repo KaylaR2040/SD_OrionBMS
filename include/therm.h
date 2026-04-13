@@ -12,22 +12,26 @@
 
 /* STM32G4 internal ADC interface for thermistor measurements. */
 
-// Project headers
-#include "main.h"
-
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-#include <stdbool.h>
+
 
 #define THERM_APP_CHANNEL_COUNT 10U
+
+typedef struct {
+    uint32_t    adc_channel;   /* HAL ADC channel constant */
+    const char *software_pin;  /* GPIO port/pin label */
+    const char *physical_pin;  /* Package pin number */
+} therm_channel_pin_t;
 
 /* Shared thermistor ADC constants for voltage/count conversions. */
 #define THERM_MAX_COUNTS 4095U
 #define THERM_REF_MV     3300U
 
 extern ADC_HandleTypeDef hadc1;
+extern const therm_channel_pin_t therm_channel_pins[THERM_APP_CHANNEL_COUNT];
 
 void Therm_App_Init(void);
 uint16_t Therm_App_ReadChannel(uint32_t channel);

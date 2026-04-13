@@ -9,15 +9,24 @@
 
 // Master project header
 #include "master.h"
-#include <stdint.h>
 
 #define THERM_CONVERSION_TIMEOUT_MS  10U
 #define THERM_SAMPLE_TIME            ADC_SAMPLETIME_247CYCLES_5
 #define THERM_SETTLE_DELAY_ITERS     64U
 
+const therm_channel_pin_t therm_channel_pins[THERM_APP_CHANNEL_COUNT] = {
 
-/* Moved to therm.h so other modules (e.g., CAN logging) can reuse. */
-#include "therm.h"
+    {ADC_CHANNEL_1,  "PA0",  "12"}, // Thermistor  1: ADC1_IN1
+    {ADC_CHANNEL_2,  "PA1",  "13"}, // Thermistor  2: ADC1_IN2
+    {ADC_CHANNEL_11, "PB12", "14"}, // Thermistor  3: ADC1_IN11
+    {ADC_CHANNEL_14, "PB11", "15"}, // Thermistor  4: ADC1_IN14
+    {ADC_CHANNEL_5,  "PB14", "16"}, // Thermistor  5: ADC1_IN5
+    {ADC_CHANNEL_6,  "PC0",  "17"}, // Thermistor  6: ADC1_IN6
+    {ADC_CHANNEL_7,  "PC1",  "18"}, // Thermistor  7: ADC1_IN7
+    {ADC_CHANNEL_8,  "PC2",  "19"}, // Thermistor  8: ADC1_IN8
+    {ADC_CHANNEL_9,  "PC3",  "20"}, // Thermistor  9: ADC1_IN9
+    {ADC_CHANNEL_15, "PB0",  "21"}  // Thermistor 10: ADC1_IN15
+};
 
 /*
  * Thermistor ADC sampling math:
@@ -92,34 +101,33 @@ uint16_t Therm_App_ReadChannel(uint32_t channel)
 /* Iterate across the thermistor channels so higher layers get consistent data */
 void Therm_App_SampleAll(uint16_t out_vals[THERM_APP_CHANNEL_COUNT])
 {
-    const uint32_t chans[THERM_APP_CHANNEL_COUNT] = {
-        ADC_CHANNEL_1,  // PA0  = ADC1_IN1  = Thermistor 1
-        ADC_CHANNEL_2,  // PA1  = ADC1_IN2  = Thermistor 2
-        ADC_CHANNEL_11, // PB12 = ADC1_IN11 = Thermistor 3
-        ADC_CHANNEL_14, // PB11 = ADC1_IN14 = Thermistor 4
-        ADC_CHANNEL_5,  // PB14 = ADC1_IN5  = Thermistor 5
-        ADC_CHANNEL_6,  // PC0  = ADC1_IN6  = Thermistor 6
-        ADC_CHANNEL_7,  // PC1  = ADC1_IN7  = Thermistor 7
-        ADC_CHANNEL_8,  // PC2  = ADC1_IN8  = Thermistor 8
-        ADC_CHANNEL_9,  // PC3  = ADC1_IN9  = Thermistor 9
-        ADC_CHANNEL_15  // PB0  = ADC1_IN15 = Thermistor 10
-    };
+    // const uint32_t chans[THERM_APP_CHANNEL_COUNT] = {
+    //     ADC_CHANNEL_1,  // PA0  = ADC1_IN1  = Thermistor 1
+    //     ADC_CHANNEL_2,  // PA1  = ADC1_IN2  = Thermistor 2
+    //     ADC_CHANNEL_11, // PB12 = ADC1_IN11 = Thermistor 3
+    //     ADC_CHANNEL_14, // PB11 = ADC1_IN14 = Thermistor 4
+    //     ADC_CHANNEL_5,  // PB14 = ADC1_IN5  = Thermistor 5
+    //     ADC_CHANNEL_6,  // PC0  = ADC1_IN6  = Thermistor 6
+    //     ADC_CHANNEL_7,  // PC1  = ADC1_IN7  = Thermistor 7
+    //     ADC_CHANNEL_8,  // PC2  = ADC1_IN8  = Thermistor 8
+    //     ADC_CHANNEL_9,  // PC3  = ADC1_IN9  = Thermistor 9
+    //     ADC_CHANNEL_15  // PB0  = ADC1_IN15 = Thermistor 10
+    // };
 
     if (!out_vals) return;
     for (size_t i = 0; i < THERM_APP_CHANNEL_COUNT; ++i) {
-        out_vals[i] = Therm_App_ReadChannel(chans[i]);
+        out_vals[i] = Therm_App_ReadChannel(therm_channel_pins[i].adc_channel);
     }
 }
 
 /* Emit a log snapshot of the thermistor readings so the CLI can visualize sensor values */
 void Therm_App_LogSnapshot(void)
 {
+    //const char *channel_pins[THERM_APP_CHANNEL_COUNT] = {
+    //     "PA0", "PA1", "PB14", "PC0", "PC1", "PC2", "PC3", "PB12", "PB11", "PB0"
+    // };
     uint16_t samples[THERM_APP_CHANNEL_COUNT] = {0};
-    // STM32 Pins: 1, 2, 5, 6, 7, 8, 9, 11, 14, 15
-    const char *channel_pins[THERM_APP_CHANNEL_COUNT] = {
-        "PA0", "PA1", "PB14", "PC0", "PC1",
-        "PC2", "PC3", "PB12", "PB11", "PB0"
-    };
+
 
     /* Capture one full sweep so the log shows a consistent instant in time. */
     Therm_App_SampleAll(samples);
@@ -138,17 +146,18 @@ void Therm_App_LogSnapshot(void)
             ((uint32_t)samples[i] * (uint32_t)THERM_REF_MV) / (uint32_t)THERM_MAX_COUNTS;
         const uint32_t volts_whole = millivolts / 1000U;
         const uint32_t volts_frac = millivolts % 1000U;
-        /* Each channel line shows ID, pin, and computed voltage in volts. */
-        LOG_INFO("  %s%-2lu%s %-5s %5lu cnt %s%lu.%03lu V%s",
-             LOG_COLOR_FIELD,
-             (unsigned long)(i + 1U),
-             LOG_COLOR_RESET,
-             channel_pins[i],
-             (unsigned long)samples[i],
-             LOG_COLOR_VALUE,
-             (unsigned long)volts_whole,
-             (unsigned long)volts_frac,
-             LOG_COLOR_RESET);
+        /* Each channel line shows ID, software pin, chip pin, and computed voltage in volts. */
+        LOG_INFO("  %s%-2lu%s %-6s (Pin %-2s) %5lu -> %s%lu.%03lu V%s",
+            LOG_COLOR_FIELD,
+            (unsigned long)(i + 1U),
+            LOG_COLOR_RESET,
+            therm_channel_pins[i].software_pin,
+            therm_channel_pins[i].physical_pin,
+            (unsigned long)samples[i],
+            LOG_COLOR_VALUE,
+            (unsigned long)volts_whole,
+            (unsigned long)volts_frac,
+            LOG_COLOR_RESET);
     }
     /* Spacer to separate thermistor output from subsequent task logs. */
     LOG_INFO("\n");
@@ -156,12 +165,7 @@ void Therm_App_LogSnapshot(void)
 
 
 void Therm_LogCachedSnapshot(void)
-{// Cached snapshot to ensure consistent logging when filter isn't in use.
-    // STM32 Pins: 1, 2, 5, 6, 7, 8, 9, 11, 14, 15
-    const char *channel_pins[THERM_APP_CHANNEL_COUNT] = {
-        "PA0", "PA1", "PB14", "PC0", "PC1",
-        "PC2", "PC3", "PB12", "PB11", "PB0"
-    };
+{
     const uint8_t count = g_can_ctx.thermistors.num_active;
 
     if (count == 0U) {
@@ -175,17 +179,25 @@ void Therm_LogCachedSnapshot(void)
         const uint32_t millivolts =
             ((uint32_t)sample * (uint32_t)THERM_REF_MV) / (uint32_t)THERM_MAX_COUNTS;
         const uint32_t volts_whole = millivolts / 1000U;
-        const uint32_t volts_frac = millivolts % 1000U;
+        const uint32_t volts_frac  = millivolts % 1000U;
         const int temp_c = (int)Thermistor_ADCToTemp(sample);
 
-        LOG_INFO("  %-2lu %-5s %5u cnt %lu.%03lu V %dC",
+        LOG_INFO("  %s%-2lu%s %-6s (Pin %-2s) ch%-3lu %5u cnt %s%lu.%03lu V%s %dC",
+             LOG_COLOR_FIELD,
              (unsigned long)(i + 1U),
-             channel_pins[i],
+             LOG_COLOR_RESET,
+             therm_channel_pins[i].software_pin,
+             therm_channel_pins[i].physical_pin,
+             (unsigned long)therm_channel_pins[i].adc_channel,
              (unsigned)sample,
+             LOG_COLOR_VALUE,
              (unsigned long)volts_whole,
              (unsigned long)volts_frac,
+             LOG_COLOR_RESET,
              temp_c);
     }
+
+    LOG_INFO("\n");
 }
 
 /* Execute the thermistor periodic task that toggles LEDs and logs samples */
