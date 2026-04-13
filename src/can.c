@@ -22,24 +22,24 @@ can_app_ctx_t g_can_ctx;
 #define CAN_TX_ERROR_LOG_PERIOD_MS 1000U
 
 // OLD Time Query based Implmentation
-static bool CAN_ShouldLogTxError_(void)
-{
-    static uint32_t last_tx_error_log_ms = 0U;
-    const uint32_t now = HAL_GetTick();
+// static bool CAN_ShouldLogTxError_(void)
+// {
+//     static uint32_t last_tx_error_log_ms = 0U;
+//     const uint32_t now = HAL_GetTick();
 
-    if ((now - last_tx_error_log_ms) >= CAN_TX_ERROR_LOG_PERIOD_MS) {
-        last_tx_error_log_ms = now;
-        return true;
-    }
-    return false;
-}
+//     if ((now - last_tx_error_log_ms) >= CAN_TX_ERROR_LOG_PERIOD_MS) {
+//         last_tx_error_log_ms = now;
+//         return true;
+//     }
+//     return false;
+// }
 
 // New Interrupt based Implementation
 // TODO KAYLA: Please review. Are we sure that we should only be checking for TX errors when log is sent out, not with every CAN message?
-// static bool CAN_ShouldLogTxError_(void){
-//     /* CAN TX errors are logged when Timer_CheckLogOffset2Flag() fires (every 3s, at the 3s mark) */
-//     return Timer_CheckLogOffset2Flag();
-// }
+static bool CAN_ShouldLogTxError_(void){
+    /* CAN TX errors are logged when Timer_CheckLogOffset2Flag() fires (every 3s, at the 3s mark) */
+    return Timer_CheckLogOffset2Flag();
+}
 
 
 /* -------------------------------------------------------------------------- */
