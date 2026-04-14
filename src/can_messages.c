@@ -1,9 +1,6 @@
 /*
  * File: can_messages.c
  * Description: CAN message encoding for thermistor modules and Orion BMS
- TODO: L-180 CAN for voltage ADC 
- TODO: L-180 CAN for temperature ADC
- TODO: Write debugging info for L-180
  */
 
 #include "master.h"
@@ -12,8 +9,14 @@
 #define THERM_HOT_C 65
 #define CAN_DEBUG_EMU_MODULES              2u
 #define CAN_DEBUG_EMU_CHANNELS_PER_MODULE  5u
+#define THERM_FAULT_PERSIST_LOG_MS         5000u
+#define CAN_TX_DROP_LOG_PERIOD_MS          3000u
 
 ThermistorCache_t s_cache = {0};
+static uint16_t s_prev_fault_mask = 0u;
+static uint16_t s_prev_hot_mask = 0u;
+static bool s_prev_pack_hot = false;
+static uint32_t s_last_fault_summary_log_ms = 0u;
 
 /* Module configuration (source address 0x80 = first Orion thermistor module) */
 static const ThermJ1939ClaimMsg_t s_default_claim = {
@@ -26,6 +29,49 @@ static const ThermJ1939ClaimMsg_t s_default_claim = {
 static uint16_t CAN_ThermMask(uint8_t therm_index)
 {
     return (uint16_t)(1u << therm_index);
+}
+
+static const char *CAN_ThermFaultReason_(const ThermistorCache_t *cache, uint8_t idx)
+{
+    if ((cache == NULL) || (idx >= cache->count)) {
+        return "unknown";
+    }
+
+    if (CAN_Debug_IsSensorFaulted(idx)) {
+        return "forced";
+    }
+    if (cache->adc_raw[idx] >= ORION_THERM_ADC_OPEN_FAULT_THRESHOLD) {
+        return "open";
+    }
+    if (cache->adc_raw[idx] <= ORION_THERM_ADC_SHORT_FAULT_THRESHOLD) {
+        return "short";
+    }
+    if ((cache->temps[idx] < ORION_THERM_MIN_VALID_C) ||
+        (cache->temps[idx] > ORION_THERM_MAX_VALID_C)) {
+        return "range";
+    }
+
+    return "invalid";
+}
+
+static void CAN_LogActiveFaultChannels_(const ThermistorCache_t *cache, uint16_t fault_mask)
+{
+    if ((cache == NULL) || (fault_mask == 0u)) {
+        return;
+    }
+
+    for (uint8_t i = 0u; i < cache->count; i++) {
+        const uint16_t therm_mask = CAN_ThermMask(i);
+        if ((fault_mask & therm_mask) == 0u) {
+            continue;
+        }
+
+        LOG_WARN("Fault active: therm=%u reason=%s adc=%u temp=%dC",
+                 (unsigned)(i + 1u),
+                 CAN_ThermFaultReason_(cache, i),
+                 (unsigned)cache->adc_raw[i],
+                 (int)cache->temps[i]);
+    }
 }
 
 static uint8_t CAN_PackTemp(int8_t temp_c)
@@ -92,7 +138,7 @@ static void CAN_LogTxFailure_(const char *frame_name, uint32_t can_id, int resul
 
     if (result == CAN_TX_RESULT_TRANSIENT_DROP) {
         dropped_frames++;
-        if ((now - last_drop_log_ms) >= 1000U) {
+        if ((now - last_drop_log_ms) >= CAN_TX_DROP_LOG_PERIOD_MS) {
             LOG_WARN("CAN TX congested/no-ack: dropped=%lu last=%s id=0x%08lX",
                      (unsigned long)dropped_frames,
                      frame_name,
@@ -402,6 +448,7 @@ void ConvertAllThermistors(const uint16_t *adc_values, uint8_t count)
     s_cache.fault_mask = 0u;
     s_cache.module_fault = false;
 
+    uint16_t hot_mask = 0u;
     int32_t sum = 0;
     for (uint8_t i = 0; i < s_cache.count; i++) {
         const uint16_t adc_raw = adc_values[i];
@@ -429,12 +476,15 @@ void ConvertAllThermistors(const uint16_t *adc_values, uint8_t count)
         /* Track over-temperature separately from invalid-sensor faults.
          * Over-temp must remain valid in CAN stats so BMS can report a hot condition. */
         if (!therm_fault && temp_c > THERM_HOT_C) {
-            const uint32_t millivolts = ((uint32_t)adc_raw * (uint32_t)THERM_REF_MV) / (uint32_t)THERM_MAX_COUNTS;
-            LOG_WARN("Thermistor %u too hot: %dC (adc=%u, %lu.%03lu V)",
-                     (unsigned)(i + 1U), (int)temp_c,
-                     (unsigned)adc_raw,
-                     (unsigned long)(millivolts / 1000u),
-                     (unsigned long)(millivolts % 1000u));
+            hot_mask |= therm_mask;
+            if ((s_prev_hot_mask & therm_mask) == 0u) {
+                const uint32_t millivolts = ((uint32_t)adc_raw * (uint32_t)THERM_REF_MV) / (uint32_t)THERM_MAX_COUNTS;
+                LOG_WARN("Thermistor %u too hot: %dC (adc=%u, %lu.%03lu V)",
+                         (unsigned)(i + 1U), (int)temp_c,
+                         (unsigned)adc_raw,
+                         (unsigned long)(millivolts / 1000u),
+                         (unsigned long)(millivolts % 1000u));
+            }
         }
 
         if (sensor_fault_forced) {
@@ -447,9 +497,21 @@ void ConvertAllThermistors(const uint16_t *adc_values, uint8_t count)
         if (therm_fault) {
             s_cache.fault_mask |= therm_mask;
             s_cache.module_fault = true;
-            LOG_WARN("Thermistor %u fault set (mask=0x%04X) adc=%u temp=%dC", (unsigned)(i + 1U), (unsigned)s_cache.fault_mask,
-                     (unsigned)adc_raw, (int)temp_c);
+            if ((s_prev_fault_mask & therm_mask) == 0u) {
+                LOG_WARN("Thermistor %u fault set (mask=0x%04X) adc=%u temp=%dC",
+                         (unsigned)(i + 1U),
+                         (unsigned)s_cache.fault_mask,
+                         (unsigned)adc_raw,
+                         (int)temp_c);
+            }
             continue;
+        }
+
+        if ((s_prev_fault_mask & therm_mask) != 0u) {
+            LOG_INFO("Thermistor %u fault cleared adc=%u temp=%dC",
+                     (unsigned)(i + 1U),
+                     (unsigned)adc_raw,
+                     (int)temp_c);
         }
 
         if (temp_c < s_cache.min_temp) {
@@ -476,15 +538,47 @@ void ConvertAllThermistors(const uint16_t *adc_values, uint8_t count)
         }
     }
 
-    s_cache.last_update_ms = HAL_GetTick();
+    const uint32_t now_ms = HAL_GetTick();
+    s_cache.last_update_ms = now_ms;
 
-    if (s_cache.max_temp > THERM_HOT_C) {
+    for (uint8_t i = 0u; i < s_cache.count; i++) {
+        const uint16_t therm_mask = CAN_ThermMask(i);
+        if (((s_prev_hot_mask & therm_mask) != 0u) &&
+            ((hot_mask & therm_mask) == 0u)) {
+            LOG_INFO("Thermistor %u no longer too hot", (unsigned)(i + 1U));
+        }
+    }
+
+    const bool pack_too_hot = (s_cache.max_temp > THERM_HOT_C);
+    if (pack_too_hot && !s_prev_pack_hot) {
         LOG_WARN("PACK TOO HOT: max=%dC id=%u", (int)s_cache.max_temp, (unsigned)s_cache.max_id);
     }
-
-    if (s_cache.fault_mask != 0u) {
-        LOG_WARN("Thermistor fault mask=0x%04X valid=%u", (unsigned)s_cache.fault_mask, (unsigned)s_cache.valid_count);
+    if (!pack_too_hot && s_prev_pack_hot) {
+        LOG_INFO("PACK TEMP NORMALIZED: max=%dC", (int)s_cache.max_temp);
     }
+    s_prev_pack_hot = pack_too_hot;
+
+    if (s_cache.fault_mask != s_prev_fault_mask) {
+        if (s_cache.fault_mask != 0u) {
+            LOG_WARN("Thermistor fault mask=0x%04X valid=%u",
+                     (unsigned)s_cache.fault_mask,
+                     (unsigned)s_cache.valid_count);
+            CAN_LogActiveFaultChannels_(&s_cache, s_cache.fault_mask);
+        } else {
+            LOG_INFO("Thermistor fault mask cleared valid=%u", (unsigned)s_cache.valid_count);
+        }
+        s_last_fault_summary_log_ms = now_ms;
+    } else if ((s_cache.fault_mask != 0u) &&
+               ((now_ms - s_last_fault_summary_log_ms) >= THERM_FAULT_PERSIST_LOG_MS)) {
+        LOG_WARN("Thermistor fault persists mask=0x%04X valid=%u",
+                 (unsigned)s_cache.fault_mask,
+                 (unsigned)s_cache.valid_count);
+        CAN_LogActiveFaultChannels_(&s_cache, s_cache.fault_mask);
+        s_last_fault_summary_log_ms = now_ms;
+    }
+
+    s_prev_fault_mask = s_cache.fault_mask;
+    s_prev_hot_mask = hot_mask;
 
     CAN_Debug_UpdateCoreState(s_default_claim.thermistor_module,
                               ORION_THERM_SOURCE_ADDR,
