@@ -294,10 +294,17 @@ int CAN_Comm_SendExt(uint32_t ext_id, const uint8_t *data, uint8_t len)
 
     if (HAL_FDCAN_AddMessageToTxFifoQ(&g_fdcan1, &txHeader, (uint8_t *)data) != HAL_OK) {
         if (CAN_ShouldLogTxError_()) {
-            LOG_WARN("FDCAN TX busy/no-ack ID=0x%08lX, HAL ErrorCode=0x%08lX, state=%lu",
-                     (unsigned long)ext_id,
-                     (unsigned long)g_fdcan1.ErrorCode,
-                     (unsigned long)HAL_FDCAN_GetState(&g_fdcan1));
+            if ((g_fdcan1.ErrorCode & HAL_FDCAN_ERROR_FIFO_FULL) != 0u) {
+                LOG_WARN("FDCAN TX FIFO full ID=0x%08lX free=%lu state=%lu",
+                         (unsigned long)ext_id,
+                         (unsigned long)HAL_FDCAN_GetTxFifoFreeLevel(&g_fdcan1),
+                         (unsigned long)HAL_FDCAN_GetState(&g_fdcan1));
+            } else {
+                LOG_WARN("FDCAN TX add failed ID=0x%08lX err=0x%08lX state=%lu",
+                         (unsigned long)ext_id,
+                         (unsigned long)g_fdcan1.ErrorCode,
+                         (unsigned long)HAL_FDCAN_GetState(&g_fdcan1));
+            }
         }
         return CAN_TX_RESULT_TRANSIENT_DROP;
     }

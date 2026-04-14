@@ -33,6 +33,8 @@ static volatile uint32_t s_isr_call_count = 0u;  /* DEBUG: count TIM6 ISR calls 
 /* TIM7 CAN timer counters */
 static volatile uint32_t s_can_counter_100ms = 0u;
 static volatile uint32_t s_can_counter_200ms = 0u;
+static volatile uint32_t s_can_counter_1000ms = 0u;
+static volatile uint8_t  s_can_ext_voltage_event_count = 0u;
 
 /* Logging cycle: 1000ms counter with 3 offset states (0->1->2->0) */
 static volatile uint32_t s_counter_1000ms = 0u;
@@ -212,6 +214,14 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
             s_can_counter_200ms = 0u;
             g_flag_can_200ms = true;
         }
+
+        s_can_counter_1000ms++;
+        if (s_can_counter_1000ms >= CAN_TICKS_FOR_1000MS) {
+            s_can_counter_1000ms = 0u;
+            if (s_can_ext_voltage_event_count < 0xFFu) {
+                s_can_ext_voltage_event_count++;
+            }
+        }
     }
 
     if (htim->Instance == TIM5 && s_wake_armed) {
@@ -261,12 +271,30 @@ bool Timer_CheckCan200msFlag(void)
     return false;
 }
 
+bool Timer_HasCanExternalVoltageEvent(void)
+{
+    return s_can_ext_voltage_event_count > 0u;
+}
+
+void Timer_ConsumeCanExternalVoltageEvent(void)
+{
+    const uint32_t primask = Timer_LockIrq_();
+
+    if (s_can_ext_voltage_event_count > 0u) {
+        s_can_ext_voltage_event_count--;
+    }
+
+    Timer_UnlockIrq_(primask);
+}
+
 void Timer_ResetCanSchedule(void)
 {
     const uint32_t primask = Timer_LockIrq_();
 
     s_can_counter_100ms = 0u;
     s_can_counter_200ms = 0u;
+    s_can_counter_1000ms = 0u;
+    s_can_ext_voltage_event_count = 0u;
     g_flag_can_100ms = false;
     g_flag_can_200ms = false;
 

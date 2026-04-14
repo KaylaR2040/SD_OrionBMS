@@ -6,6 +6,9 @@
 
 #define MAX_THERMISTORS 10u
 #define MAX_VOLTAGE     14u
+#define EXTERNAL_ADC_VOLTAGE_FRAMES            4u
+#define EXTERNAL_ADC_VOLTAGES_PER_FRAME        4u
+#define EXTERNAL_ADC_VOLTAGE_BASE_ID           0x18FF3000u
 
 /* Orion thermistor expansion defaults. Change these to match the BMS profile. */
 #define ORION_BMS_TARGET_ADDR       0xF3u
@@ -69,6 +72,7 @@ void ConvertAllThermistors(const uint16_t *adc_values, uint8_t count);
 /* Encode messages */
 void EncodeBMSBroadcast(uint8_t *payload);
 void EncodeGeneralBroadcast(uint8_t therm_index, uint8_t *payload);
+void CAN_UpdateExternalADCVoltages(const uint16_t *out_mv, uint8_t count);
 
 /* Main send function */
 void CAN_SendMessages(void);

@@ -573,6 +573,7 @@ bool bq79616_service_task(void) // Uses BQ79616 Chip to externally read Voltages
     static uint8_t fault_poll_phase = 0u;
     static uint8_t last_fault_sys = 0u;
     static uint8_t last_fault_comm1 = 0u;
+    static uint32_t last_cell_snapshot_tick = 0u;
     uint32_t now = HAL_GetTick();
     
     if ((now - last_keep_alive) >= 20u) {  /* Every 20ms: beat comm timeout */
@@ -653,6 +654,17 @@ bool bq79616_service_task(void) // Uses BQ79616 Chip to externally read Voltages
         }
     }
 
+    if ((now - last_cell_snapshot_tick) >= 100u) {
+        uint16_t cell_mv[MAX_VOLTAGE] = {0};
+        int cell_status = bq79616_read_all_cells_with_timeout_(cell_mv, MAX_VOLTAGE, BQ_SERVICE_TIMEOUT_MS);
+
+        last_cell_snapshot_tick = now;
+
+        if (cell_status == 0) {
+            CAN_UpdateExternalADCVoltages(cell_mv, MAX_VOLTAGE);
+        }
+    }
+
     /* Logging only happens when interrupt flag fires (offset 1: every 2s, 5s, 8s...) */
     if (Timer_CheckLogOffset1Flag()) {
         LOG_INFO("BQ service alive");
@@ -660,6 +672,7 @@ bool bq79616_service_task(void) // Uses BQ79616 Chip to externally read Voltages
         uint16_t cell_mv[16] = {0};
         int cell_status = bq79616_read_all_cells_with_timeout_(cell_mv, 16u, BQ_SERVICE_TIMEOUT_MS);
         if (cell_status == 0) {
+            CAN_UpdateExternalADCVoltages(cell_mv, MAX_VOLTAGE);
             LOG_INFO("BQ cell mV: "
                      "1:%u 2:%u 3:%u 4:%u 5:%u 6:%u 7:%u 8:%u "
                      "9:%u 10:%u 11:%u 12:%u 13:%u 14:%u 15:%u 16:%u",

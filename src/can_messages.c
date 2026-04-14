@@ -79,6 +79,11 @@ static uint32_t CAN_GeneralIdForSource(uint8_t source_addr)
     return 0x18380000u | ((uint32_t)ORION_BMS_TARGET_ADDR << 8) | (uint32_t)source_addr;
 }
 
+static uint32_t CAN_ExternalADCVoltageIdForSegment(uint8_t segment_index)
+{
+    return EXTERNAL_ADC_VOLTAGE_BASE_ID | (uint32_t)(segment_index & 0x03u);
+}
+
 static void CAN_LogTxFailure_(const char *frame_name, uint32_t can_id, int result)
 {
     static uint32_t last_drop_log_ms = 0U;
@@ -104,6 +109,41 @@ static void CAN_LogTxFailure_(const char *frame_name, uint32_t can_id, int resul
              result);
 }
 
+static void CAN_LogExternalVoltageTx_(uint32_t ext_id,
+                                      uint8_t segment_index,
+                                      const uint8_t payload[8],
+                                      uint32_t now_ms)
+{
+    static uint32_t s_last_any_ms = 0u;
+    static uint32_t s_last_segment_ms[EXTERNAL_ADC_VOLTAGE_FRAMES] = {0u};
+    uint32_t dt_any_ms = 0u;
+    uint32_t dt_segment_ms = 0u;
+
+    if (!CAN_Debug_IsStreamEnabled()) {
+        return;
+    }
+
+    if (s_last_any_ms != 0u) {
+        dt_any_ms = now_ms - s_last_any_ms;
+    }
+    s_last_any_ms = now_ms;
+
+    if (segment_index < EXTERNAL_ADC_VOLTAGE_FRAMES) {
+        if (s_last_segment_ms[segment_index] != 0u) {
+            dt_segment_ms = now_ms - s_last_segment_ms[segment_index];
+        }
+        s_last_segment_ms[segment_index] = now_ms;
+    }
+
+    LOG_DEBUG("TX 0x%08lX extv seg=%u dt_any=%lums dt_seg=%lums [%02X %02X %02X %02X %02X %02X %02X %02X]",
+              (unsigned long)ext_id,
+              segment_index,
+              (unsigned long)dt_any_ms,
+              (unsigned long)dt_segment_ms,
+              payload[0], payload[1], payload[2], payload[3],
+              payload[4], payload[5], payload[6], payload[7]);
+}
+
 static void CAN_EncodeJ1939ClaimForModule(uint8_t source_addr, uint8_t module_index, uint8_t *payload)
 {
     payload[0] = ORION_CLAIM_UNIQUE_ID0;         /* 0xF3 */
@@ -114,6 +154,29 @@ static void CAN_EncodeJ1939ClaimForModule(uint8_t source_addr, uint8_t module_in
     payload[5] = s_default_claim.constant[0];    /* 0x40 */
     payload[6] = s_default_claim.constant[1];    /* 0x1E */
     payload[7] = s_default_claim.constant[2];    /* 0x90 */
+}
+
+static void CAN_EncodeExternalADCVoltage(uint8_t segment_index,
+                                         const uint16_t *out_mv,
+                                         uint8_t count,
+                                         uint8_t *payload)
+{
+    const uint8_t clamped_count = (count > MAX_VOLTAGE) ? MAX_VOLTAGE : count;
+    const uint8_t start_index = (uint8_t)(segment_index * EXTERNAL_ADC_VOLTAGES_PER_FRAME);
+
+    memset(payload, 0, 8u);
+
+    for (uint8_t slot = 0u; slot < EXTERNAL_ADC_VOLTAGES_PER_FRAME; slot++) {
+        const uint8_t value_index = (uint8_t)(start_index + slot);
+        uint16_t millivolts = 0u;
+
+        if ((out_mv != NULL) && (value_index < clamped_count)) {
+            millivolts = out_mv[value_index];
+        }
+
+        payload[(uint8_t)(slot * 2u)] = (uint8_t)(millivolts & 0x00FFu);
+        payload[(uint8_t)(slot * 2u + 1u)] = (uint8_t)((millivolts >> 8u) & 0x00FFu);
+    }
 }
 
 static void CAN_EncodeBmsForCache(const ThermistorCache_t *cache,
@@ -172,6 +235,33 @@ static void CAN_EncodeGeneralForCache(const ThermistorCache_t *cache,
     payload[7] = cache->min_id;                             /* Lowest loaded thermistor ID on module */
 
     CAN_Debug_SetLastGeneralInfo(global_id, capped_idx, this_temp);
+}
+
+static bool CAN_SendExternalADCVoltageFrame_(uint8_t segment_index, uint8_t *payload)
+{
+    if ((payload == NULL) || (g_can_ctx.voltages.num_active == 0u)) {
+        return false;
+    }
+
+    {
+        const uint32_t ext_id = CAN_ExternalADCVoltageIdForSegment(segment_index);
+        int result;
+
+        CAN_EncodeExternalADCVoltage(segment_index,
+                                     g_can_ctx.voltages.voltage_adc_values,
+                                     g_can_ctx.voltages.num_active,
+                                     payload);
+
+        result = CAN_Comm_SendExt(ext_id, payload, 8u);
+        if (result != 0) {
+            CAN_LogTxFailure_("extv", ext_id, result);
+            return false;
+        }
+
+        CAN_LogExternalVoltageTx_(ext_id, segment_index, payload, HAL_GetTick());
+    }
+
+    return true;
 }
 
 static uint8_t CAN_DebugModuleSampleCount(uint8_t start_idx)
@@ -456,6 +546,21 @@ void EncodeGeneralBroadcast(uint8_t therm_index, uint8_t *payload)
     CAN_EncodeGeneralForCache(&s_cache, s_default_claim.thermistor_module, therm_index, payload);
 }
 
+void CAN_UpdateExternalADCVoltages(const uint16_t *out_mv, uint8_t count)
+{
+    if (out_mv == NULL) {
+        return;
+    }
+
+    if (count > MAX_VOLTAGE) {
+        count = MAX_VOLTAGE;
+    }
+
+    memset(g_can_ctx.voltages.voltage_adc_values, 0, sizeof(g_can_ctx.voltages.voltage_adc_values));
+    memcpy(g_can_ctx.voltages.voltage_adc_values, out_mv, (size_t)count * sizeof(uint16_t));
+    g_can_ctx.voltages.num_active = count;
+}
+
 
 /* -------------------------------------------------------------------------- */
 /* Main Send Function - Call from main loop                                   */
@@ -467,8 +572,10 @@ void CAN_SendMessages(void)
     static uint8_t emu_therm_index[CAN_DEBUG_EMU_MODULES] = {0U, 0U};
     static uint8_t emu_module_slot_rr = 0U;
     static uint8_t emu_claim_slot_rr = 0U;
+    static uint8_t ext_voltage_segment_rr = 0U;
     uint8_t payload[8];
     int result;
+    bool sent_claim_this_pass = false;
 
     /* Ensure we have at least one temperature snapshot before transmitting */
     if (s_cache.count == 0U && g_can_ctx.thermistors.num_active > 0U) {
@@ -506,6 +613,7 @@ void CAN_SendMessages(void)
                 CAN_Debug_RequestLogClaim();
             }
             emu_claim_slot_rr = (uint8_t)((emu_claim_slot_rr + 1U) % CAN_DEBUG_EMU_MODULES);
+            sent_claim_this_pass = true;
         }
 
         if (Timer_CheckCan100msFlag()) {
@@ -573,6 +681,16 @@ void CAN_SendMessages(void)
                 emu_therm_index[module_slot] = 0U;
             }
 
+            /* Allow at most one 100 ms deferral when a claim frame shares this slot.
+             * The timer event remains pending until we successfully transmit, so timing
+             * stays phase-locked instead of drifting with HAL_GetTick()-based gating. */
+            if (!sent_claim_this_pass &&
+                Timer_HasCanExternalVoltageEvent() &&
+                CAN_SendExternalADCVoltageFrame_(ext_voltage_segment_rr, payload)) {
+                Timer_ConsumeCanExternalVoltageEvent();
+                ext_voltage_segment_rr =
+                    (uint8_t)((ext_voltage_segment_rr + 1U) % EXTERNAL_ADC_VOLTAGE_FRAMES);
+            }
             emu_module_slot_rr = (uint8_t)((emu_module_slot_rr + 1U) % CAN_DEBUG_EMU_MODULES);
         }
 
@@ -592,6 +710,7 @@ void CAN_SendMessages(void)
         } else {
             CAN_Debug_RequestLogClaim();
         }
+        sent_claim_this_pass = true;
     }
 
     /* 100 ms: BMS Broadcast + General Broadcast */
@@ -643,6 +762,14 @@ void CAN_SendMessages(void)
             CAN_LogTxFailure_("gen", THERM_GENERAL_BROADCAST_ID, result);
         } else {
             CAN_Debug_RequestLogGeneral();
+        }
+
+        if (!sent_claim_this_pass &&
+            Timer_HasCanExternalVoltageEvent() &&
+            CAN_SendExternalADCVoltageFrame_(ext_voltage_segment_rr, payload)) {
+            Timer_ConsumeCanExternalVoltageEvent();
+            ext_voltage_segment_rr =
+                (uint8_t)((ext_voltage_segment_rr + 1U) % EXTERNAL_ADC_VOLTAGE_FRAMES);
         }
 
         /* Next thermistor */

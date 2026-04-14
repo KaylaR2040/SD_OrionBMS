@@ -53,6 +53,7 @@ extern "C" {
 #define TIMER7_PERIOD        ((TIMER7_CLK_HZ / 1000u) * TIMER_INTERVAL_100MS)
 #define CAN_TICKS_FOR_100MS  1u
 #define CAN_TICKS_FOR_200MS  2u
+#define CAN_TICKS_FOR_1000MS 10u
 
 /* -------------------------------------------------------------------------- */
 /* Global Variables                                                           */
@@ -117,6 +118,8 @@ bool Timer_CheckCan100msFlag(void);
  * @return true if 200ms interval has elapsed, false otherwise
  */
 bool Timer_CheckCan200msFlag(void);
+bool Timer_HasCanExternalVoltageEvent(void);
+void Timer_ConsumeCanExternalVoltageEvent(void);
 
 void Timer_ResetCanSchedule(void);
 void Timer_TriggerCanScheduleNow(void);
