@@ -12,9 +12,21 @@
 #ifndef VOLT_H
 #define VOLT_H
 
+#include <stdbool.h>
+
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+typedef enum {
+    BQ_STATE_STARTUP_PENDING = 0,
+    BQ_STATE_READY,
+    BQ_STATE_FAILED
+} BQ_State_t;
+
+void Volt_RunBlockingStartup(void);
+BQ_State_t Volt_GetState(void);
+bool Volt_IsFaultReportingMode(void);
 
 /* Service task for BQ79616 voltage measurements and monitoring */
 void Volt_ServiceTask(void);

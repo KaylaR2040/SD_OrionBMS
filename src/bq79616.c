@@ -37,6 +37,7 @@ static uint8_t tx_buf[BQ_TX_MAX];
 static uint8_t rx_buf[BQ_RX_MAX];
 
 #define BQ_FIRST_READ_TIMEOUT_MS 200u
+#define BQ_SERVICE_TIMEOUT_MS    10u
 
 // Function Declarations
 void bq_pin_tx_to_gpio(void);
@@ -46,6 +47,7 @@ void bq_delay_us(uint32_t us);
 void bq_drive_wake_pulse(uint32_t pulse_us);
 void bq_enable_dwt(void);
 void bq_log_hex_internal(const char *label, const uint8_t *buf, size_t len);
+static int bq79616_read_all_cells_with_timeout_(uint16_t *out_mv, size_t cell_count, uint32_t timeout_ms);
 
 /* ------------------------------ CRC16-IBM --------------------------------- */
 /* Reflected polynomial 0xA001, init 0xFFFF */
@@ -566,56 +568,88 @@ bool bq79616_service_task(void) // Uses BQ79616 Chip to externally read Voltages
 
     static uint32_t last_keep_alive = 0;
     static uint32_t fault_check_tick = 0;
-    static uint8_t consecutive_comm_failures = 0u;
+    static uint8_t consecutive_keepalive_failures = 0u;
+    static uint8_t consecutive_fault_failures = 0u;
+    static uint8_t fault_poll_phase = 0u;
+    static uint8_t last_fault_sys = 0u;
+    static uint8_t last_fault_comm1 = 0u;
     uint32_t now = HAL_GetTick();
     
     if ((now - last_keep_alive) >= 20u) {  /* Every 20ms: beat comm timeout */
         last_keep_alive = now;
 
         uint8_t keep = BQ_CONTROL1_SEND_WAKE_MASK | 0x01u; /* 0x21 */
-        int bq_status = bq79616_write(DEVICE_ADDR, CONTROL1, &keep, 1u);
+        int bq_status = bq7961x_single_write(DEVICE_ADDR,
+                                             CONTROL1,
+                                             &keep,
+                                             1u,
+                                             BQ_SERVICE_TIMEOUT_MS);
 
         /* Tolerate short transient comm glitches before disabling BQ. */
         if (bq_status != 0) {
-            consecutive_comm_failures++;
-            if (consecutive_comm_failures >= 3u) {
+            consecutive_keepalive_failures++;
+            if (consecutive_keepalive_failures >= 3u) {
                 LOG_ERROR("BQ Keep-Alive Write FAILED repeatedly (%u). Disabling BQ task.",
-                          (unsigned)consecutive_comm_failures);
+                          (unsigned)consecutive_keepalive_failures);
                 volt_status = FAILED;
                 return false;
             }
             LOG_WARN("BQ Keep-Alive write failed once (bq_status=%d). Retrying...", bq_status);
             return true;
         }
-        consecutive_comm_failures = 0u;
+        consecutive_keepalive_failures = 0u;
+    }
 
-        /* Every 200 ms, check FAULT using a VERY FAST timeout so we don't freeze */
-        if ((now - fault_check_tick) >= 200u) {
-            fault_check_tick = now;
-            uint8_t fault_sys = 0, fault_comm1 = 0;
-            
-            int fault_sys_bq_status = bq7961x_single_read(DEVICE_ADDR, FAULT_SYS, &fault_sys, sizeof(fault_sys), BQ_FAST_TIMEOUT_MS);
-            int fault_comm1_bq_status = bq7961x_single_read(DEVICE_ADDR, FAULT_COMM1, &fault_comm1, sizeof(fault_comm1), BQ_FAST_TIMEOUT_MS);
-            
-            /* If reads fail repeatedly, then disable. */
-            if (fault_sys_bq_status != 0 || fault_comm1_bq_status != 0) {
-                consecutive_comm_failures++;
-                if (consecutive_comm_failures >= 3u) {
-                    LOG_ERROR("BQ Read FAILED repeatedly (%u). Comm lost; disabling BQ task.",
-                              (unsigned)consecutive_comm_failures);
-                    volt_status = FAILED;
-                    return false;
-                }
-                LOG_WARN("BQ read failed once (sys=%d comm1=%d). Retrying...",
-                         fault_sys_bq_status, fault_comm1_bq_status);
-                return true;
-            }
-            consecutive_comm_failures = 0u;
+    /* Poll one diagnostic register per service slot so CAN does not get stuck
+     * behind a pair of long fault reads when BQ comms are missing. */
+    if ((now - fault_check_tick) >= 200u) {
+        uint8_t fault_val = 0u;
+        int bq_status = 0;
 
-            /* Log actual faults if read succeeded */
-            if (fault_sys | fault_comm1) {
-                LOG_WARN("FAULT_SYS=0x%02X FAULT_COMM1=0x%02X", fault_sys, fault_comm1);
+        fault_check_tick = now;
+
+        if (fault_poll_phase == 0u) {
+            bq_status = bq7961x_single_read(DEVICE_ADDR,
+                                            FAULT_SYS,
+                                            &fault_val,
+                                            sizeof(fault_val),
+                                            BQ_SERVICE_TIMEOUT_MS);
+            if (bq_status == 0) {
+                last_fault_sys = fault_val;
             }
+        } else {
+            bq_status = bq7961x_single_read(DEVICE_ADDR,
+                                            FAULT_COMM1,
+                                            &fault_val,
+                                            sizeof(fault_val),
+                                            BQ_SERVICE_TIMEOUT_MS);
+            if (bq_status == 0) {
+                last_fault_comm1 = fault_val;
+            }
+        }
+
+        if (bq_status != 0) {
+            consecutive_fault_failures++;
+            if (consecutive_fault_failures >= 3u) {
+                LOG_ERROR("BQ fault poll FAILED repeatedly (%u). Comm lost; disabling BQ task.",
+                          (unsigned)consecutive_fault_failures);
+                volt_status = FAILED;
+                return false;
+            }
+
+            if (fault_poll_phase == 0u) {
+                LOG_WARN("BQ read failed once (sys=%d). Retrying...", bq_status);
+            } else {
+                LOG_WARN("BQ read failed once (comm1=%d). Retrying...", bq_status);
+            }
+            return true;
+        }
+
+        consecutive_fault_failures = 0u;
+        fault_poll_phase ^= 1u;
+
+        if ((last_fault_sys | last_fault_comm1) != 0u) {
+            LOG_WARN("FAULT_SYS=0x%02X FAULT_COMM1=0x%02X", last_fault_sys, last_fault_comm1);
         }
     }
 
@@ -624,7 +658,7 @@ bool bq79616_service_task(void) // Uses BQ79616 Chip to externally read Voltages
         LOG_INFO("BQ service alive");
         
         uint16_t cell_mv[16] = {0};
-        int cell_status = bq79616_read_all_cells(cell_mv, 16u);
+        int cell_status = bq79616_read_all_cells_with_timeout_(cell_mv, 16u, BQ_SERVICE_TIMEOUT_MS);
         if (cell_status == 0) {
             LOG_INFO("BQ cell mV: "
                      "1:%u 2:%u 3:%u 4:%u 5:%u 6:%u 7:%u 8:%u "
@@ -987,14 +1021,14 @@ bool bq79616_try_init(void)
     return true;
 }
 
-int bq79616_read_all_cells(uint16_t *out_mv, size_t cell_count)
+static int bq79616_read_all_cells_with_timeout_(uint16_t *out_mv, size_t cell_count, uint32_t timeout_ms)
 {
     if (!out_mv || cell_count == 0u || cell_count > 16u) {
         return -1;
     }
 
     uint8_t raw[32] = {0};
-    int status = bq7961x_single_read(DEVICE_ADDR, VCELL16_HI, raw, 32u, BQ_FAST_TIMEOUT_MS);
+    int status = bq7961x_single_read(DEVICE_ADDR, VCELL16_HI, raw, 32u, timeout_ms);
     if (status != 0) {
         return status;
     }
@@ -1017,4 +1051,9 @@ int bq79616_read_all_cells(uint16_t *out_mv, size_t cell_count)
     }
 
     return 0;
+}
+
+int bq79616_read_all_cells(uint16_t *out_mv, size_t cell_count)
+{
+    return bq79616_read_all_cells_with_timeout_(out_mv, cell_count, BQ_FAST_TIMEOUT_MS);
 }

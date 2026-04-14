@@ -39,6 +39,20 @@ static volatile uint32_t s_counter_1000ms = 0u;
 static volatile uint8_t  s_log_cycle_offset = 0u;  /* Tracks which 1-second offset we're in (0, 1, or 2) */
 #define TICKS_FOR_1000MS  100u  /* 10ms * 100 = 1000ms */
 
+static uint32_t Timer_LockIrq_(void)
+{
+    const uint32_t primask = __get_PRIMASK();
+    __disable_irq();
+    return primask;
+}
+
+static void Timer_UnlockIrq_(uint32_t primask)
+{
+    if (primask == 0u) {
+        __enable_irq();
+    }
+}
+
 // Init all timers
 void Timers_Init(void)
 {
@@ -245,6 +259,28 @@ bool Timer_CheckCan200msFlag(void)
         return true;
     }
     return false;
+}
+
+void Timer_ResetCanSchedule(void)
+{
+    const uint32_t primask = Timer_LockIrq_();
+
+    s_can_counter_100ms = 0u;
+    s_can_counter_200ms = 0u;
+    g_flag_can_100ms = false;
+    g_flag_can_200ms = false;
+
+    Timer_UnlockIrq_(primask);
+}
+
+void Timer_TriggerCanScheduleNow(void)
+{
+    const uint32_t primask = Timer_LockIrq_();
+
+    g_flag_can_100ms = true;
+    g_flag_can_200ms = true;
+
+    Timer_UnlockIrq_(primask);
 }
 
 bool Timer_CheckLogOffset0Flag(void)

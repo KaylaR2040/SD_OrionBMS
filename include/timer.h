@@ -118,6 +118,9 @@ bool Timer_CheckCan100msFlag(void);
  */
 bool Timer_CheckCan200msFlag(void);
 
+void Timer_ResetCanSchedule(void);
+void Timer_TriggerCanScheduleNow(void);
+
 /**
  * @brief Check if logging offset 0 (1s, 4s, 7s...) flag is set and clear it
  * @return true if it's Therm's turn to log, false otherwise

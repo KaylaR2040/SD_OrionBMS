@@ -120,8 +120,9 @@ void CAN_Debug_ApplyManualOverrides(void)
 {
     CAN_Debug_Clear();
 
-    /* DEBUG TEST MODE: emulate two modules (0x80 + 0x81), 5 thermistors each. */
-    CAN_Debug_SetDualModuleEmulation(true);
+    /* Production default: keep the regular single-module path enabled.
+     * Uncomment only for explicit developer testing. */
+    // CAN_Debug_SetDualModuleEmulation(true);
 
     /* Live ADC test: keep real sensor values (no forced temperature override). */
     // CAN_Debug_All_TempOverride(25);

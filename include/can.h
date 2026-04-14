@@ -41,6 +41,8 @@ extern can_app_ctx_t g_can_ctx;
 
 void CAN_App_Init(uint32_t kbps);
 void CAN_App_InitData(can_app_ctx_t *ctx);
+void CAN_SetSchedulingEnabled(bool enabled, bool send_immediately);
+bool CAN_IsSchedulingEnabled(void);
 void CAN_ServiceTask(void);
 int CAN_Comm_Init_kbps(uint32_t kbps);
 int CAN_FindTiming(uint32_t fclk_hz, uint32_t bitrate_hz, uint32_t *out_presc, uint32_t *out_tseg1,uint32_t *out_tseg2, uint32_t *out_sjw);

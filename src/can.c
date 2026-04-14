@@ -14,6 +14,7 @@ FDCAN_HandleTypeDef g_fdcan1;
 FDCAN_TxHeaderTypeDef g_can_tx_header;
 uint8_t g_can_tx_data[8];
 can_app_ctx_t g_can_ctx;
+static bool s_can_scheduling_enabled = false;
 
 #ifndef DEFAULT_CAN_KBPS
 #define DEFAULT_CAN_KBPS CAN_APP_DEFAULT_KBPS
@@ -56,6 +57,8 @@ void CAN_App_Init(uint32_t kbps)
         LOG_ERROR("FDCAN init failed");
         Error_Handler();
     }
+
+    s_can_scheduling_enabled = false;
 }
 
 
@@ -88,6 +91,13 @@ int CAN_Comm_Init_kbps(uint32_t kbps)
             sjw = tseg2;
         }
     }
+
+    LOG_INFO("FDCAN nominal timing: %lu kbps presc=%lu tseg1=%lu tseg2=%lu sjw=%lu",
+             (unsigned long)kbps,
+             (unsigned long)presc,
+             (unsigned long)tseg1,
+             (unsigned long)tseg2,
+             (unsigned long)sjw);
 
     g_fdcan1.Instance = FDCAN1;
     g_fdcan1.Init.FrameFormat = FDCAN_FRAME_CLASSIC;
@@ -161,11 +171,26 @@ void CAN_App_InitData(can_app_ctx_t *ctx)
     LOG_INFO("ERROR CODE AFTER INIT: 0x%08lX", (unsigned long)err);
 }
 
+void CAN_SetSchedulingEnabled(bool enabled, bool send_immediately)
+{
+    s_can_scheduling_enabled = enabled;
+    Timer_ResetCanSchedule();
+
+    if (enabled && send_immediately) {
+        Timer_TriggerCanScheduleNow();
+    }
+}
+
+bool CAN_IsSchedulingEnabled(void)
+{
+    return s_can_scheduling_enabled;
+}
+
 //TODO: This should be changed to use an interrupt instead of the next sample and now thing.. 
 void CAN_ServiceTask(void)
 {
     /* Check if CAN subsystem is active */
-    if (can_status == FAILED) {
+    if (can_status == FAILED || !s_can_scheduling_enabled) {
         return;
     }
 

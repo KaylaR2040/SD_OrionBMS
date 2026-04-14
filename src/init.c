@@ -17,20 +17,26 @@ void System_AppInit(void)
     SystemClock_Config();    /* Set up PLL and system bus clocks */
     LED_Init();              /* Configure on-board LED GPIOs */
     clocks_configure_all();  /* Board-specific clock tree helpers */
-    Therm_App_Init();        /* Initialize internal ADC driver for thermistors */
-    CAN_App_Init(CAN_APP_DEFAULT_KBPS); /* Start FDCAN at the project-configured bitrate */
     UART_Stlink_Init();               /* Console/logging UART on USART2 (PA2/PA3) */
     UART_BQ79616_Init();      /* BQ79616 transport UART on USART1 (PC4/PC5) */
+    Therm_App_Init();        /* Initialize internal ADC driver for thermistors */
+    CAN_App_Init(CAN_APP_DEFAULT_KBPS); /* Start FDCAN at the project-configured bitrate */
     Timers_Init();           /* Start hardware timers for periodic tasks */
+    CAN_SetSchedulingEnabled(false, false);
 
     /* Load the developer thermistor override table before the thermistor/CAN tasks start. */
     CAN_Debug_Init();
-    CAN_Debug_SetMode(true);
+    CAN_Debug_SetMode(false);
     CAN_Debug_ApplyManualOverrides();
 
-    /* BQ79616 Bring Up Sequence */
-    if (!bq79616_try_init()) {
-        volt_status = FAILED;
+    /* Blocking BQ bring-up owns startup. CAN scheduling is released only after
+     * BQ reaches a terminal READY or FAILED state. */
+    Volt_RunBlockingStartup();
+
+    if (Volt_GetState() == BQ_STATE_READY) {
+        CAN_SetSchedulingEnabled(true, false);
+    } else if (Volt_GetState() == BQ_STATE_FAILED) {
+        CAN_SetSchedulingEnabled(true, true);
     }
 }
 

@@ -55,6 +55,15 @@ static bool CAN_DebugDualModuleActive(void)
     return CAN_Debug_IsEnabled() && CAN_Debug_IsDualModuleEmulationEnabled();
 }
 
+static bool CAN_ModuleFaultActive(const ThermistorCache_t *cache)
+{
+    if (Volt_IsFaultReportingMode()) {
+        return true;
+    }
+
+    return (cache != NULL) && cache->module_fault;
+}
+
 static uint32_t CAN_ClaimIdForSource(uint8_t source_addr)
 {
     return 0x18EEFF00u | (uint32_t)source_addr;
@@ -119,7 +128,7 @@ static void CAN_EncodeBmsForCache(const ThermistorCache_t *cache,
     payload[3] = CAN_PackTemp(cache->avg_temp);   /* Average temp (int8_t) */
 
     uint8_t module_fault_flag = 0u;
-    if (cache->module_fault) {
+    if (CAN_ModuleFaultActive(cache)) {
         module_fault_flag = 0x80u;
     }
 
@@ -392,7 +401,7 @@ void ConvertAllThermistors(const uint16_t *adc_values, uint8_t count)
                               ORION_BMS_TARGET_ADDR,
                               s_cache.count,
                               s_cache.valid_count,
-                              s_cache.module_fault,
+                              CAN_ModuleFaultActive(&s_cache),
                               s_cache.fault_mask,
                               s_cache.min_temp,
                               s_cache.max_temp,
@@ -520,7 +529,7 @@ void CAN_SendMessages(void)
                                       ORION_BMS_TARGET_ADDR,
                                       module_cache.count,
                                       module_cache.valid_count,
-                                      module_cache.module_fault,
+                                      CAN_ModuleFaultActive(&module_cache),
                                       module_cache.fault_mask,
                                       module_cache.min_temp,
                                       module_cache.max_temp,
@@ -544,7 +553,7 @@ void CAN_SendMessages(void)
                                       ORION_BMS_TARGET_ADDR,
                                       module_cache.count,
                                       module_cache.valid_count,
-                                      module_cache.module_fault,
+                                      CAN_ModuleFaultActive(&module_cache),
                                       module_cache.fault_mask,
                                       module_cache.min_temp,
                                       module_cache.max_temp,
@@ -598,7 +607,7 @@ void CAN_SendMessages(void)
                       ORION_BMS_TARGET_ADDR,
                       s_cache.count,
                       s_cache.valid_count,
-                      s_cache.module_fault,
+                      CAN_ModuleFaultActive(&s_cache),
                       s_cache.fault_mask,
                       s_cache.min_temp,
                       s_cache.max_temp,
@@ -622,7 +631,7 @@ void CAN_SendMessages(void)
                       ORION_BMS_TARGET_ADDR,
                       s_cache.count,
                       s_cache.valid_count,
-                      s_cache.module_fault,
+                      CAN_ModuleFaultActive(&s_cache),
                       s_cache.fault_mask,
                       s_cache.min_temp,
                       s_cache.max_temp,
