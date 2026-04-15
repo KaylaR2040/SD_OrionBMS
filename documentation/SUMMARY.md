@@ -1,0 +1,25 @@
+# Summary
+
+1. `README.md`
+2. `getting_started.md`
+3. `hardware_setup.md`
+4. `pinout_and_signals.md`
+5. `startup_and_flashing.md`
+6. `system_overview.md`
+7. `firmware_overview.md`
+8. `code_map.md`
+9. `communication.md`
+10. `logging_and_leds.md`
+11. `troubleshooting.md`
+12. `known_issues_and_resolutions.md`
+13. `bringup_checklist.md`
+14. `docs_map.md`
+15. `diagrams/documentation_relationship_map.md`
+16. `diagrams/system_block_diagram.md`
+17. `diagrams/startup_flowchart.md`
+18. `diagrams/flashing_flowchart.md`
+19. `diagrams/communication_flowchart.md`
+20. `reference/hardware_reference.md`
+21. `reference/firmware_reference.md`
+22. `reference/toolchain_and_programmer_reference.md`
+23. `reference/chip_inventory.md`
