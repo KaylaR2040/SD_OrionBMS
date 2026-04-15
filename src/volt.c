@@ -43,6 +43,7 @@ bool Volt_IsFaultReportingMode(void)
 void Volt_ServiceTask(void)
 {
     if (s_bq_state != BQ_STATE_READY) {
+        LED_On(VOLT_LED);  /* Light up VOLT_LED on VOLT/BQ failure */
         return;
     }
 

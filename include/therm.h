@@ -36,7 +36,7 @@ extern const therm_channel_pin_t therm_channel_pins[THERM_APP_CHANNEL_COUNT];
 void Therm_App_Init(void);
 uint16_t Therm_App_ReadChannel(uint32_t channel);
 void Therm_App_SampleAll(uint16_t out_vals[THERM_APP_CHANNEL_COUNT]);
-void Therm_App_LogSnapshot(void);
+void Therm_LogCachedSnapshot(void);
 void Therm_ServiceTask(void);
 
 #ifdef __cplusplus

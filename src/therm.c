@@ -14,8 +14,10 @@
 #define THERM_SAMPLE_TIME            ADC_SAMPLETIME_247CYCLES_5
 #define THERM_SETTLE_DELAY_ITERS     64U
 
-const therm_channel_pin_t therm_channel_pins[THERM_APP_CHANNEL_COUNT] = {
+static void Therm_DelayForSettling(void);
+static HAL_StatusTypeDef Therm_PerformConversion(uint16_t *result);
 
+const therm_channel_pin_t therm_channel_pins[THERM_APP_CHANNEL_COUNT] = {
     {ADC_CHANNEL_1,  "PA0",  "12"}, // Thermistor  1: ADC1_IN1
     {ADC_CHANNEL_2,  "PA1",  "13"}, // Thermistor  2: ADC1_IN2
     {ADC_CHANNEL_11, "PB12", "14"}, // Thermistor  3: ADC1_IN11
@@ -42,12 +44,7 @@ ADC_HandleTypeDef hadc1;
 /* Sampling happens immediately and continuously in the service loop */
 #define THERM_SAMPLE_PERIOD_MS      100U
 
-/* Human-readable thermistor dumps use logging interrupt flags */
-#define THERM_ENABLE_PERIODIC_LOG   1
 
-static void Therm_DelayForSettling(void);
-static HAL_StatusTypeDef Therm_PerformConversion(uint16_t *result);
-void Therm_LogCachedSnapshot(void);
 
 /* Initialize the STM32G4 on-chip ADC for thermistor measurements */
 void Therm_App_Init(void)
@@ -120,48 +117,7 @@ void Therm_App_SampleAll(uint16_t out_vals[THERM_APP_CHANNEL_COUNT])
     }
 }
 
-/* Emit a log snapshot of the thermistor readings so the CLI can visualize sensor values */
-void Therm_App_LogSnapshot(void)
-{
-    //const char *channel_pins[THERM_APP_CHANNEL_COUNT] = {
-    //     "PA0", "PA1", "PB14", "PC0", "PC1", "PC2", "PC3", "PB12", "PB11", "PB0"
-    // };
-    uint16_t samples[THERM_APP_CHANNEL_COUNT] = {0};
 
-
-    /* Capture one full sweep so the log shows a consistent instant in time. */
-    Therm_App_SampleAll(samples);
-
-    /* Update the CAN context thermistor values for transmission. */
-    for (uint8_t i = 0; i < THERM_APP_CHANNEL_COUNT && i < MAX_THERMISTORS; i++) {
-        g_can_ctx.thermistors.thermistor_adc_values[i] = samples[i];
-    }
-    
-    g_can_ctx.thermistors.num_active = THERM_APP_CHANNEL_COUNT;
-
-    /* Header label separates thermistor dump from prior task output. */
-    LOG_INFO("Thermistor snapshot:");
-    for (size_t i = 0; i < THERM_APP_CHANNEL_COUNT; ++i) {
-        const uint32_t millivolts =
-            ((uint32_t)samples[i] * (uint32_t)THERM_REF_MV) / (uint32_t)THERM_MAX_COUNTS;
-        const uint32_t volts_whole = millivolts / 1000U;
-        const uint32_t volts_frac = millivolts % 1000U;
-        /* Each channel line shows ID, software pin, chip pin, and computed voltage in volts. */
-        LOG_INFO("  %s%-2lu%s %-6s (Pin %-2s) %5lu -> %s%lu.%03lu V%s",
-            LOG_COLOR_FIELD,
-            (unsigned long)(i + 1U),
-            LOG_COLOR_RESET,
-            therm_channel_pins[i].software_pin,
-            therm_channel_pins[i].physical_pin,
-            (unsigned long)samples[i],
-            LOG_COLOR_VALUE,
-            (unsigned long)volts_whole,
-            (unsigned long)volts_frac,
-            LOG_COLOR_RESET);
-    }
-    /* Spacer to separate thermistor output from subsequent task logs. */
-    LOG_INFO("\n");
-}
 
 
 void Therm_LogCachedSnapshot(void)
@@ -169,11 +125,11 @@ void Therm_LogCachedSnapshot(void)
     const uint8_t count = g_can_ctx.thermistors.num_active;
 
     if (count == 0U) {
-        LOG_INFO("Thermistor cache: no active thermistors");
+        LOG_INFO("Thermistor Cache: no active thermistors");
         return;
     }
 
-    LOG_INFO("Thermistor cache:");
+    LOG_INFO("Thermistor Cache:");
     for (uint8_t i = 0U; i < count && i < THERM_APP_CHANNEL_COUNT; ++i) {
         const uint16_t sample = g_can_ctx.thermistors.thermistor_adc_values[i];
         const uint32_t millivolts =
@@ -182,7 +138,7 @@ void Therm_LogCachedSnapshot(void)
         const uint32_t volts_frac  = millivolts % 1000U;
         const int temp_c = (int)Thermistor_ADCToTemp(sample);
 
-        LOG_INFO("  %s%-2lu%s %-6s (Pin %-2s) ch%-3lu %5u cnt %s%lu.%03lu V%s %dC",
+        LOG_INFO("  %s%-2lu%s %-6s (Pin %-2s) ch%-3lu %5u -> %s%lu.%03lu V%s %dC",
              LOG_COLOR_FIELD,
              (unsigned long)(i + 1U),
              LOG_COLOR_RESET,
@@ -206,6 +162,7 @@ void Therm_ServiceTask(void)
 {
     /* Check if thermistor subsystem is active */
     if (therm_status == FAILED) {
+        LED_On(THERM_LED);  /* Light up THERM_LED on THERM failure */
         return;
     }
 
@@ -226,11 +183,9 @@ void Therm_ServiceTask(void)
                               g_can_ctx.thermistors.num_active);
 
     /* Logging only happens when interrupt flag fires (offset 0: every 1s, 4s, 7s...) */
-#if THERM_ENABLE_PERIODIC_LOG
     if (Timer_CheckLogOffset0Flag()) {
         Therm_LogCachedSnapshot();
     }
-#endif
 }
 
 /* Burn cycles so the sampling cap settles after a channel switch */

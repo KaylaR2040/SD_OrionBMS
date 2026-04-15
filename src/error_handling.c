@@ -26,12 +26,12 @@ void Error_Handler(void)
 {
     __disable_irq();
     LED_Init();
-    LED_On(ERROR_LED);
+    LED_All_On();
     // Write to UART Logging system here
     LOG_ERROR("Error occurred!");
 
     while (1) {
-        LED_Toggle(ERROR_LED);
+        LED_All_Toggle();
         error_delay();
     }
 }

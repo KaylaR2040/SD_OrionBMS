@@ -12,13 +12,11 @@
 
 #include "master.h"
 
-bool bq_is_active = false;
 
 /* Boolean Flags to Track if each subsystem properly inits and is active
     If flag is ACTIVE, the service task will run
     If flag is FAILED, the service task will be skipped and an error will be logged
 */
-
 volatile bool log_status = ACTIVE;
 volatile bool can_status = ACTIVE;
 volatile bool therm_status = ACTIVE;

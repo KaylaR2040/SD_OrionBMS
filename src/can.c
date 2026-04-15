@@ -191,7 +191,8 @@ void CAN_ServiceTask(void)
 {
     /* Check if CAN subsystem is active */
     if (can_status == FAILED || !s_can_scheduling_enabled) {
-        return;
+        LED_On(CAN_LED);  /* Light up CAN_LED on CAN failure */
+        // return; // Commented out to ensure CAN Service routine ALWAYS runs, even if CAN is in a failed state
     }
 
     CAN_SendMessages();

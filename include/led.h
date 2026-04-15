@@ -30,6 +30,11 @@ typedef enum {
 
 #define ERROR_LED LED_ID_LD3
 
+/* Subsystem status LEDs */
+#define THERM_LED LED_ID_LD1
+#define CAN_LED   LED_ID_LD2
+#define VOLT_LED  LED_ID_LD3
+
 /* Default flash duration for LED_Flash (ms) */
 #ifndef LED_FLASH_DURATION_MS
 #define LED_FLASH_DURATION_MS 100U
