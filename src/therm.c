@@ -117,48 +117,7 @@ void Therm_App_SampleAll(uint16_t out_vals[THERM_APP_CHANNEL_COUNT])
     }
 }
 
-/* Emit a log snapshot of the thermistor readings so the CLI can visualize sensor values */
-void Therm_App_LogSnapshot(void)
-{
-    //const char *channel_pins[THERM_APP_CHANNEL_COUNT] = {
-    //     "PA0", "PA1", "PB14", "PC0", "PC1", "PC2", "PC3", "PB12", "PB11", "PB0"
-    // };
-    uint16_t samples[THERM_APP_CHANNEL_COUNT] = {0};
 
-
-    /* Capture one full sweep so the log shows a consistent instant in time. */
-    Therm_App_SampleAll(samples);
-
-    /* Update the CAN context thermistor values for transmission. */
-    for (uint8_t i = 0; i < THERM_APP_CHANNEL_COUNT && i < MAX_THERMISTORS; i++) {
-        g_can_ctx.thermistors.thermistor_adc_values[i] = samples[i];
-    }
-    
-    g_can_ctx.thermistors.num_active = THERM_APP_CHANNEL_COUNT;
-
-    /* Header label separates thermistor dump from prior task output. */
-    LOG_INFO("Thermistor Snapshot:");
-    for (size_t i = 0; i < THERM_APP_CHANNEL_COUNT; ++i) {
-        const uint32_t millivolts =
-            ((uint32_t)samples[i] * (uint32_t)THERM_REF_MV) / (uint32_t)THERM_MAX_COUNTS;
-        const uint32_t volts_whole = millivolts / 1000U;
-        const uint32_t volts_frac = millivolts % 1000U;
-        /* Each channel line shows ID, software pin, chip pin, and computed voltage in volts. */
-        LOG_INFO("  %s%-2lu%s %-6s (Pin %-2s) %5lu -> %s%lu.%03lu V%s",
-            LOG_COLOR_FIELD,
-            (unsigned long)(i + 1U),
-            LOG_COLOR_RESET,
-            therm_channel_pins[i].software_pin,
-            therm_channel_pins[i].physical_pin,
-            (unsigned long)samples[i],
-            LOG_COLOR_VALUE,
-            (unsigned long)volts_whole,
-            (unsigned long)volts_frac,
-            LOG_COLOR_RESET);
-    }
-    /* Spacer to separate thermistor output from subsequent task logs. */
-    LOG_INFO("\n");
-}
 
 
 void Therm_LogCachedSnapshot(void)
@@ -225,8 +184,8 @@ void Therm_ServiceTask(void)
 
     /* Logging only happens when interrupt flag fires (offset 0: every 1s, 4s, 7s...) */
     if (Timer_CheckLogOffset0Flag()) {
-        Therm_App_LogSnapshot();
-        // Therm_LogCachedSnapshot();
+        //Therm_App_LogSnapshot(); //THIS CAN BE REMOVED BECAUSE WE DO NOT NEED A FULL ADC SWEEP AGAIN 
+        Therm_LogCachedSnapshot();
     }
 }
 
