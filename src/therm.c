@@ -184,7 +184,6 @@ void Therm_ServiceTask(void)
 
     /* Logging only happens when interrupt flag fires (offset 0: every 1s, 4s, 7s...) */
     if (Timer_CheckLogOffset0Flag()) {
-        //Therm_App_LogSnapshot(); //THIS CAN BE REMOVED BECAUSE WE DO NOT NEED A FULL ADC SWEEP AGAIN 
         Therm_LogCachedSnapshot();
     }
 }
