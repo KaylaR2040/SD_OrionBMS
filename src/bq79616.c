@@ -38,6 +38,7 @@ static uint8_t rx_buf[BQ_RX_MAX];
 
 #define BQ_FIRST_READ_TIMEOUT_MS 200u
 #define BQ_SERVICE_TIMEOUT_MS    10u
+#define BQ_FAULT_SNAPSHOT_LOG_MS 2000u
 
 // Function Declarations
 void bq_pin_tx_to_gpio(void);
@@ -558,6 +559,68 @@ int bq79616_read_cell_voltage(uint8_t dev_addr, uint8_t cell_channel, uint16_t *
     return 0;
 }
 
+typedef struct
+{
+    uint8_t summary;
+    uint8_t sys;
+    uint8_t pwr1;
+    uint8_t pwr2;
+    uint8_t comm1;
+    uint8_t comm2;
+    uint8_t comm3;
+    uint8_t ov1;
+    uint8_t ov2;
+    uint8_t uv1;
+    uint8_t uv2;
+} bq_fault_snapshot_t;
+
+static int bq79616_read_fault_snapshot_(bq_fault_snapshot_t *snap, uint32_t timeout_ms)
+{
+    if (!snap) {
+        return -1;
+    }
+
+    if (bq7961x_single_read(DEVICE_ADDR, FAULT_SUMMARY, &snap->summary, sizeof(snap->summary), timeout_ms) != 0) return -10;
+    if (bq7961x_single_read(DEVICE_ADDR, FAULT_SYS, &snap->sys, sizeof(snap->sys), timeout_ms) != 0) return -11;
+    if (bq7961x_single_read(DEVICE_ADDR, FAULT_PWR1, &snap->pwr1, sizeof(snap->pwr1), timeout_ms) != 0) return -12;
+    if (bq7961x_single_read(DEVICE_ADDR, FAULT_PWR2, &snap->pwr2, sizeof(snap->pwr2), timeout_ms) != 0) return -13;
+    if (bq7961x_single_read(DEVICE_ADDR, FAULT_COMM1, &snap->comm1, sizeof(snap->comm1), timeout_ms) != 0) return -14;
+    if (bq7961x_single_read(DEVICE_ADDR, FAULT_COMM2, &snap->comm2, sizeof(snap->comm2), timeout_ms) != 0) return -15;
+    if (bq7961x_single_read(DEVICE_ADDR, FAULT_COMM3, &snap->comm3, sizeof(snap->comm3), timeout_ms) != 0) return -16;
+    if (bq7961x_single_read(DEVICE_ADDR, FAULT_OV1, &snap->ov1, sizeof(snap->ov1), timeout_ms) != 0) return -17;
+    if (bq7961x_single_read(DEVICE_ADDR, FAULT_OV2, &snap->ov2, sizeof(snap->ov2), timeout_ms) != 0) return -18;
+    if (bq7961x_single_read(DEVICE_ADDR, FAULT_UV1, &snap->uv1, sizeof(snap->uv1), timeout_ms) != 0) return -19;
+    if (bq7961x_single_read(DEVICE_ADDR, FAULT_UV2, &snap->uv2, sizeof(snap->uv2), timeout_ms) != 0) return -20;
+
+    return 0;
+}
+
+static void bq79616_log_fault_snapshot_(const bq_fault_snapshot_t *snap)
+{
+    if (!snap) {
+        return;
+    }
+
+    if ((snap->summary | snap->sys | snap->pwr1 | snap->pwr2 |
+         snap->comm1 | snap->comm2 | snap->comm3 |
+         snap->ov1 | snap->ov2 | snap->uv1 | snap->uv2) == 0u) {
+        //LOG_INFO("BQ faults: none (SUMMARY=0x00 SYS=0x00 PWR1=0x00 PWR2=0x00 COMM1=0x00 COMM2=0x00 COMM3=0x00 OV1=0x00 OV2=0x00 UV1=0x00 UV2=0x00)");
+    } else {
+        LOG_WARN("BQ faults: SUMMARY=0x%02X SYS=0x%02X PWR1=0x%02X PWR2=0x%02X COMM1=0x%02X COMM2=0x%02X COMM3=0x%02X OV1=0x%02X OV2=0x%02X UV1=0x%02X UV2=0x%02X",
+                 snap->summary,
+                 snap->sys,
+                 snap->pwr1,
+                 snap->pwr2,
+                 snap->comm1,
+                 snap->comm2,
+                 snap->comm3,
+                 snap->ov1,
+                 snap->ov2,
+                 snap->uv1,
+                 snap->uv2);
+    }
+}
+
 //TODO: Fix and use an interrupt not the last time
 bool bq79616_service_task(void) // Uses BQ79616 Chip to externally read Voltages
 {
@@ -573,7 +636,14 @@ bool bq79616_service_task(void) // Uses BQ79616 Chip to externally read Voltages
     static uint8_t fault_poll_phase = 0u;
     static uint8_t last_fault_sys = 0u;
     static uint8_t last_fault_comm1 = 0u;
+    static uint8_t last_fault_pwr1 = 0u;
+    static uint8_t last_fault_pwr2 = 0u;
     static uint32_t last_cell_snapshot_tick = 0u;
+    static uint32_t last_fault_reg_log_tick = 0u;
+    static uint32_t last_fault_summary_poll_tick = 0u;
+    static bool had_runtime_fault_regs = false;
+    static uint16_t last_cell_mv[MAX_VOLTAGE] = {0};
+    static bool has_last_cell_snapshot = false;
     uint32_t now = HAL_GetTick();
     
     if ((now - last_keep_alive) >= 20u) {  /* Every 20ms: beat comm timeout */
@@ -602,7 +672,8 @@ bool bq79616_service_task(void) // Uses BQ79616 Chip to externally read Voltages
     }
 
     /* Poll one diagnostic register per service slot so CAN does not get stuck
-     * behind a pair of long fault reads when BQ comms are missing. */
+     * behind a sequence of long fault reads when BQ comms are missing.
+     * Round-robin phase: FAULT_SYS -> FAULT_COMM1 -> FAULT_PWR1 -> FAULT_PWR2. */
     if ((now - fault_check_tick) >= 200u) {
         uint8_t fault_val = 0u;
         int bq_status = 0;
@@ -618,7 +689,7 @@ bool bq79616_service_task(void) // Uses BQ79616 Chip to externally read Voltages
             if (bq_status == 0) {
                 last_fault_sys = fault_val;
             }
-        } else {
+        } else if (fault_poll_phase == 1u) {
             bq_status = bq7961x_single_read(DEVICE_ADDR,
                                             FAULT_COMM1,
                                             &fault_val,
@@ -626,6 +697,24 @@ bool bq79616_service_task(void) // Uses BQ79616 Chip to externally read Voltages
                                             BQ_SERVICE_TIMEOUT_MS);
             if (bq_status == 0) {
                 last_fault_comm1 = fault_val;
+            }
+        } else if (fault_poll_phase == 2u) {
+            bq_status = bq7961x_single_read(DEVICE_ADDR,
+                                            FAULT_PWR1,
+                                            &fault_val,
+                                            sizeof(fault_val),
+                                            BQ_SERVICE_TIMEOUT_MS);
+            if (bq_status == 0) {
+                last_fault_pwr1 = fault_val;
+            }
+        } else {
+            bq_status = bq7961x_single_read(DEVICE_ADDR,
+                                            FAULT_PWR2,
+                                            &fault_val,
+                                            sizeof(fault_val),
+                                            BQ_SERVICE_TIMEOUT_MS);
+            if (bq_status == 0) {
+                last_fault_pwr2 = fault_val;
             }
         }
 
@@ -640,17 +729,45 @@ bool bq79616_service_task(void) // Uses BQ79616 Chip to externally read Voltages
 
             if (fault_poll_phase == 0u) {
                 LOG_WARN("BQ read failed once (sys=%d). Retrying...", bq_status);
-            } else {
+            } else if (fault_poll_phase == 1u) {
                 LOG_WARN("BQ read failed once (comm1=%d). Retrying...", bq_status);
+            } else if (fault_poll_phase == 2u) {
+                LOG_WARN("BQ read failed once (pwr1=%d). Retrying...", bq_status);
+            } else {
+                LOG_WARN("BQ read failed once (pwr2=%d). Retrying...", bq_status);
             }
             return true;
         }
 
         consecutive_fault_failures = 0u;
-        fault_poll_phase ^= 1u;
+        fault_poll_phase = (uint8_t)((fault_poll_phase + 1u) % 4u);
 
-        if ((last_fault_sys | last_fault_comm1) != 0u) {
-            LOG_WARN("FAULT_SYS=0x%02X FAULT_COMM1=0x%02X", last_fault_sys, last_fault_comm1);
+        if ((last_fault_sys | last_fault_comm1 | last_fault_pwr1 | last_fault_pwr2) != 0u) {
+            if ((now - last_fault_reg_log_tick) >= 1000u) {
+                LOG_WARN("FAULT_SYS=0x%02X FAULT_COMM1=0x%02X FAULT_PWR1=0x%02X FAULT_PWR2=0x%02X",
+                         last_fault_sys, last_fault_comm1, last_fault_pwr1, last_fault_pwr2);
+                last_fault_reg_log_tick = now;
+            }
+            had_runtime_fault_regs = true;
+        } else if (had_runtime_fault_regs) {
+            LOG_INFO("BQ runtime fault registers cleared");
+            had_runtime_fault_regs = false;
+        }
+    }
+
+    if ((now - last_fault_summary_poll_tick) >= BQ_FAULT_SNAPSHOT_LOG_MS) {
+        bq_fault_snapshot_t snapshot = {0};
+        int summary_status = bq79616_read_fault_snapshot_(&snapshot, BQ_SERVICE_TIMEOUT_MS);
+        last_fault_summary_poll_tick = now;
+
+        if (summary_status == 0) {
+            last_fault_sys = snapshot.sys;
+            last_fault_comm1 = snapshot.comm1;
+            last_fault_pwr1 = snapshot.pwr1;
+            last_fault_pwr2 = snapshot.pwr2;
+            bq79616_log_fault_snapshot_(&snapshot);
+        } else {
+            LOG_WARN("BQ fault snapshot read failed (bq_status=%d)", summary_status);
         }
     }
 
@@ -662,26 +779,26 @@ bool bq79616_service_task(void) // Uses BQ79616 Chip to externally read Voltages
 
         if (cell_status == 0) {
             CAN_UpdateExternalADCVoltages(cell_mv, MAX_VOLTAGE);
+            memcpy(last_cell_mv, cell_mv, sizeof(last_cell_mv));
+            has_last_cell_snapshot = true;
         }
     }
 
     /* Logging only happens when interrupt flag fires (offset 1: every 2s, 5s, 8s...) */
     if (Timer_CheckLogOffset1Flag()) {
-        LOG_INFO("BQ service alive");
-        
-        uint16_t cell_mv[16] = {0};
-        int cell_status = bq79616_read_all_cells_with_timeout_(cell_mv, 16u, BQ_SERVICE_TIMEOUT_MS);
-        if (cell_status == 0) {
-            CAN_UpdateExternalADCVoltages(cell_mv, MAX_VOLTAGE);
-            LOG_INFO("BQ cell mV: "
-                     "1:%u 2:%u 3:%u 4:%u 5:%u 6:%u 7:%u 8:%u "
-                     "9:%u 10:%u 11:%u 12:%u 13:%u 14:%u 15:%u 16:%u",
-                     cell_mv[0], cell_mv[1], cell_mv[2], cell_mv[3],
-                     cell_mv[4], cell_mv[5], cell_mv[6], cell_mv[7],
-                     cell_mv[8], cell_mv[9], cell_mv[10], cell_mv[11],
-                     cell_mv[12], cell_mv[13], cell_mv[14], cell_mv[15]);
+        if (!has_last_cell_snapshot) {
+            LOG_WARN("BQ cell cache unavailable yet");
         } else {
-            LOG_WARN("BQ cell read failed (bq_status=%d)", cell_status);
+            LOG_INFO("BQ Cell Cache:");
+            for (uint8_t i = 0u; i < MAX_VOLTAGE; i++) {
+                const uint16_t mv = last_cell_mv[i];
+                LOG_INFO("  %2u  VC%02u  %4u -> %u.%03u V",
+                         (unsigned)(i + 1u),
+                         (unsigned)(i + 1u),
+                         (unsigned)mv,
+                         (unsigned)(mv / 1000u),
+                         (unsigned)(mv % 1000u));
+            }
         }
     }
     
@@ -728,6 +845,21 @@ int bq79616_clear_startup_faults(void)
 
     (void)bq7961x_single_read(DEVICE_ADDR, FAULT_PWR1, &val, sizeof(val), BQ_FAST_TIMEOUT_MS);
     LOG_INFO("FAULT_PWR1  = 0x%02X", val);
+
+    (void)bq7961x_single_read(DEVICE_ADDR, FAULT_PWR2, &val, sizeof(val), BQ_FAST_TIMEOUT_MS);
+    LOG_INFO("FAULT_PWR2  = 0x%02X", val);
+
+    (void)bq7961x_single_read(DEVICE_ADDR, FAULT_OV1, &val, sizeof(val), BQ_FAST_TIMEOUT_MS);
+    LOG_INFO("FAULT_OV1   = 0x%02X", val);
+
+    (void)bq7961x_single_read(DEVICE_ADDR, FAULT_OV2, &val, sizeof(val), BQ_FAST_TIMEOUT_MS);
+    LOG_INFO("FAULT_OV2   = 0x%02X", val);
+
+    (void)bq7961x_single_read(DEVICE_ADDR, FAULT_UV1, &val, sizeof(val), BQ_FAST_TIMEOUT_MS);
+    LOG_INFO("FAULT_UV1   = 0x%02X", val);
+
+    (void)bq7961x_single_read(DEVICE_ADDR, FAULT_UV2, &val, sizeof(val), BQ_FAST_TIMEOUT_MS);
+    LOG_INFO("FAULT_UV2   = 0x%02X", val);
 
     (void)bq7961x_single_read(DEVICE_ADDR, FAULT_COMM1, &val, sizeof(val), BQ_FAST_TIMEOUT_MS);
     LOG_INFO("FAULT_COMM1 = 0x%02X", val);
@@ -830,6 +962,16 @@ int bq79616_log_fault_registers(void)
             LOG_INFO("FAULT_SYS  =0x%02X", val);
         if (bq7961x_single_read(DEVICE_ADDR, FAULT_PWR1, &val, sizeof(val), BQ_FAST_TIMEOUT_MS) == 0)
             LOG_INFO("FAULT_PWR1 =0x%02X", val);
+        if (bq7961x_single_read(DEVICE_ADDR, FAULT_PWR2, &val, sizeof(val), BQ_FAST_TIMEOUT_MS) == 0)
+            LOG_INFO("FAULT_PWR2 =0x%02X", val);
+        if (bq7961x_single_read(DEVICE_ADDR, FAULT_OV1, &val, sizeof(val), BQ_FAST_TIMEOUT_MS) == 0)
+            LOG_INFO("FAULT_OV1  =0x%02X", val);
+        if (bq7961x_single_read(DEVICE_ADDR, FAULT_OV2, &val, sizeof(val), BQ_FAST_TIMEOUT_MS) == 0)
+            LOG_INFO("FAULT_OV2  =0x%02X", val);
+        if (bq7961x_single_read(DEVICE_ADDR, FAULT_UV1, &val, sizeof(val), BQ_FAST_TIMEOUT_MS) == 0)
+            LOG_INFO("FAULT_UV1  =0x%02X", val);
+        if (bq7961x_single_read(DEVICE_ADDR, FAULT_UV2, &val, sizeof(val), BQ_FAST_TIMEOUT_MS) == 0)
+            LOG_INFO("FAULT_UV2  =0x%02X", val);
         if (bq7961x_single_read(DEVICE_ADDR, FAULT_COMM1, &val, sizeof(val), BQ_FAST_TIMEOUT_MS) == 0)
             LOG_INFO("FAULT_COMM1=0x%02X", val);
         if (bq7961x_single_read(DEVICE_ADDR, FAULT_COMM2, &val, sizeof(val), BQ_FAST_TIMEOUT_MS) == 0)
@@ -1041,13 +1183,14 @@ static int bq79616_read_all_cells_with_timeout_(uint16_t *out_mv, size_t cell_co
     }
 
     uint8_t raw[32] = {0};
+    uint16_t parsed_mv[16] = {0};
     int status = bq7961x_single_read(DEVICE_ADDR, VCELL16_HI, raw, 32u, timeout_ms);
     if (status != 0) {
         return status;
     }
 
     /* VCELL16_HI .. VCELL1_LO, 2 bytes per cell, descending cell order */
-    for (size_t i = 0; i < cell_count; i++) {
+    for (size_t i = 0; i < 16u; i++) {
         size_t byte_idx = i * 2u;
         uint16_t adc_raw = (uint16_t)((raw[byte_idx] << 8) | raw[byte_idx + 1u]);
 
@@ -1055,12 +1198,14 @@ static int bq79616_read_all_cells_with_timeout_(uint16_t *out_mv, size_t cell_co
         uint32_t mv = (uint32_t)adc_raw * 19073u;
         mv = mv / 100000u;
 
-        /* Map so out_mv[0] corresponds to cell 1 (ascending order) */
+        /* Map so parsed_mv[0] corresponds to cell 1 (ascending order) */
         size_t cell = 16u - i;           /* cell number (16..1) */
         size_t idx_out = cell - 1u;      /* zero-based */
-        if (idx_out < cell_count) {
-            out_mv[idx_out] = (uint16_t)mv;
-        }
+        parsed_mv[idx_out] = (uint16_t)mv;
+    }
+
+    for (size_t i = 0; i < cell_count; i++) {
+        out_mv[i] = parsed_mv[i];
     }
 
     return 0;

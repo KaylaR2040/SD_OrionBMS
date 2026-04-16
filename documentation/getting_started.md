@@ -7,7 +7,7 @@ This is the shortest path to get a new board from unknown state to running firmw
 - PlatformIO CLI/IDE (build + upload)
 - STM32CubeProgrammer (option bytes, low-level flash recovery)
 - Serial terminal (`pio device monitor` is enough)
-- CAN capture tool used by the team (`candump`, Vector, PCAN, etc.)
+- CAN capture tool used by the team (Orion BMS)
 
 See: `reference/toolchain_and_programmer_reference.md`
 
