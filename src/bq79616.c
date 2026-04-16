@@ -273,7 +273,7 @@ void bq_log_hex(const char *label, const uint8_t *buf, size_t len)
 {
     const char *tag = (label) ? label : "BUF";
     if (!buf || len == 0u) {
-        LOG_INFO("%s: <empty>", tag);
+        LOG_PRINT(LOG_TYPE_INFO, "%s: <empty>", tag);
         return;
     }
 
@@ -289,7 +289,7 @@ void bq_log_hex(const char *label, const uint8_t *buf, size_t len)
         pos += (size_t)snprintf(line + pos, sizeof(line) - pos, "%02X ", buf[i]);
     }
 
-    LOG_INFO("%s", line);
+    LOG_PRINT(LOG_TYPE_INFO, "%s", line);
 }
 
 /* ---------------------- Frame builder (command frames) -------------------- */
@@ -320,12 +320,12 @@ int bq79616_build_single_read_frame(uint16_t reg_addr, uint8_t n_minus_1, uint8_
 
 int bq79616_read_partid_once(uint8_t *partid_out)
 {
-    LOG_INFO("=== BQ79616 bring-up: PARTID read ===");
+    LOG_PRINT(LOG_TYPE_INFO, "=== BQ79616 bring-up: PARTID read ===");
 
     uint8_t val = 0u;
     int bq_status = bq7961x_single_read(DEVICE_ADDR, BQ_PARTID_REG, &val, 1u, BQ_FIRST_READ_TIMEOUT_MS);
     if (bq_status != 0) {
-        LOG_ERROR("PARTID: read failed (bq_status=%d)", bq_status);
+        LOG_PRINT(LOG_TYPE_ERROR, "PARTID: read failed (bq_status=%d)", bq_status);
         return bq_status;
     }
 
@@ -333,7 +333,7 @@ int bq79616_read_partid_once(uint8_t *partid_out)
         *partid_out = val;
     }
 
-    LOG_INFO("PARTID: expected=0x%02X received=0x%02X", BQ_PARTID_EXPECTED, val);
+    LOG_PRINT(LOG_TYPE_INFO, "PARTID: expected=0x%02X received=0x%02X", BQ_PARTID_EXPECTED, val);
     return (val == BQ_PARTID_EXPECTED) ? 0 : 1;
 }
 
@@ -604,9 +604,9 @@ static void bq79616_log_fault_snapshot_(const bq_fault_snapshot_t *snap)
     if ((snap->summary | snap->sys | snap->pwr1 | snap->pwr2 |
          snap->comm1 | snap->comm2 | snap->comm3 |
          snap->ov1 | snap->ov2 | snap->uv1 | snap->uv2) == 0u) {
-        //LOG_INFO("BQ faults: none (SUMMARY=0x00 SYS=0x00 PWR1=0x00 PWR2=0x00 COMM1=0x00 COMM2=0x00 COMM3=0x00 OV1=0x00 OV2=0x00 UV1=0x00 UV2=0x00)");
+        //LOG_PRINT(LOG_TYPE_INFO, "BQ faults: none (SUMMARY=0x00 SYS=0x00 PWR1=0x00 PWR2=0x00 COMM1=0x00 COMM2=0x00 COMM3=0x00 OV1=0x00 OV2=0x00 UV1=0x00 UV2=0x00)");
     } else {
-        LOG_WARN("BQ faults: SUMMARY=0x%02X SYS=0x%02X PWR1=0x%02X PWR2=0x%02X COMM1=0x%02X COMM2=0x%02X COMM3=0x%02X OV1=0x%02X OV2=0x%02X UV1=0x%02X UV2=0x%02X",
+        LOG_PRINT(LOG_TYPE_WARN, "BQ faults: SUMMARY=0x%02X SYS=0x%02X PWR1=0x%02X PWR2=0x%02X COMM1=0x%02X COMM2=0x%02X COMM3=0x%02X OV1=0x%02X OV2=0x%02X UV1=0x%02X UV2=0x%02X",
                  snap->summary,
                  snap->sys,
                  snap->pwr1,
@@ -660,12 +660,12 @@ bool bq79616_service_task(void) // Uses BQ79616 Chip to externally read Voltages
         if (bq_status != 0) {
             consecutive_keepalive_failures++;
             if (consecutive_keepalive_failures >= 3u) {
-                LOG_ERROR("BQ Keep-Alive Write FAILED repeatedly (%u). Disabling BQ task.",
+                LOG_PRINT(LOG_TYPE_ERROR, "BQ Keep-Alive Write FAILED repeatedly (%u). Disabling BQ task.",
                           (unsigned)consecutive_keepalive_failures);
                 volt_status = FAILED;
                 return false;
             }
-            LOG_WARN("BQ Keep-Alive write failed once (bq_status=%d). Retrying...", bq_status);
+            LOG_PRINT(LOG_TYPE_WARN, "BQ Keep-Alive write failed once (bq_status=%d). Retrying...", bq_status);
             return true;
         }
         consecutive_keepalive_failures = 0u;
@@ -721,20 +721,20 @@ bool bq79616_service_task(void) // Uses BQ79616 Chip to externally read Voltages
         if (bq_status != 0) {
             consecutive_fault_failures++;
             if (consecutive_fault_failures >= 3u) {
-                LOG_ERROR("BQ fault poll FAILED repeatedly (%u). Comm lost; disabling BQ task.",
+                LOG_PRINT(LOG_TYPE_ERROR, "BQ fault poll FAILED repeatedly (%u). Comm lost; disabling BQ task.",
                           (unsigned)consecutive_fault_failures);
                 volt_status = FAILED;
                 return false;
             }
 
             if (fault_poll_phase == 0u) {
-                LOG_WARN("BQ read failed once (sys=%d). Retrying...", bq_status);
+                LOG_PRINT(LOG_TYPE_WARN, "BQ read failed once (sys=%d). Retrying...", bq_status);
             } else if (fault_poll_phase == 1u) {
-                LOG_WARN("BQ read failed once (comm1=%d). Retrying...", bq_status);
+                LOG_PRINT(LOG_TYPE_WARN, "BQ read failed once (comm1=%d). Retrying...", bq_status);
             } else if (fault_poll_phase == 2u) {
-                LOG_WARN("BQ read failed once (pwr1=%d). Retrying...", bq_status);
+                LOG_PRINT(LOG_TYPE_WARN, "BQ read failed once (pwr1=%d). Retrying...", bq_status);
             } else {
-                LOG_WARN("BQ read failed once (pwr2=%d). Retrying...", bq_status);
+                LOG_PRINT(LOG_TYPE_WARN, "BQ read failed once (pwr2=%d). Retrying...", bq_status);
             }
             return true;
         }
@@ -744,13 +744,13 @@ bool bq79616_service_task(void) // Uses BQ79616 Chip to externally read Voltages
 
         if ((last_fault_sys | last_fault_comm1 | last_fault_pwr1 | last_fault_pwr2) != 0u) {
             if ((now - last_fault_reg_log_tick) >= 1000u) {
-                LOG_WARN("FAULT_SYS=0x%02X FAULT_COMM1=0x%02X FAULT_PWR1=0x%02X FAULT_PWR2=0x%02X",
+                LOG_PRINT(LOG_TYPE_WARN, "FAULT_SYS=0x%02X FAULT_COMM1=0x%02X FAULT_PWR1=0x%02X FAULT_PWR2=0x%02X",
                          last_fault_sys, last_fault_comm1, last_fault_pwr1, last_fault_pwr2);
                 last_fault_reg_log_tick = now;
             }
             had_runtime_fault_regs = true;
         } else if (had_runtime_fault_regs) {
-            LOG_INFO("BQ runtime fault registers cleared");
+            LOG_PRINT(LOG_TYPE_INFO, "BQ runtime fault registers cleared");
             had_runtime_fault_regs = false;
         }
     }
@@ -767,7 +767,7 @@ bool bq79616_service_task(void) // Uses BQ79616 Chip to externally read Voltages
             last_fault_pwr2 = snapshot.pwr2;
             bq79616_log_fault_snapshot_(&snapshot);
         } else {
-            LOG_WARN("BQ fault snapshot read failed (bq_status=%d)", summary_status);
+            LOG_PRINT(LOG_TYPE_WARN, "BQ fault snapshot read failed (bq_status=%d)", summary_status);
         }
     }
 
@@ -787,12 +787,12 @@ bool bq79616_service_task(void) // Uses BQ79616 Chip to externally read Voltages
     /* Logging only happens when interrupt flag fires (offset 1: every 2s, 5s, 8s...) */
     if (Timer_CheckLogOffset1Flag()) {
         if (!has_last_cell_snapshot) {
-            LOG_WARN("BQ cell cache unavailable yet");
+            LOG_PRINT(LOG_TYPE_WARN, "BQ cell cache unavailable yet");
         } else {
-            LOG_INFO("BQ Cell Cache:");
+            LOG_PRINT(LOG_TYPE_INFO, "BQ Cell Cache:");
             for (uint8_t i = 0u; i < MAX_VOLTAGE; i++) {
                 const uint16_t mv = last_cell_mv[i];
-                LOG_INFO("  %2u  VC%02u  %4u -> %u.%03u V",
+                LOG_PRINT(LOG_TYPE_INFO, "  %2u  VC%02u  %4u -> %u.%03u V",
                          (unsigned)(i + 1u),
                          (unsigned)(i + 1u),
                          (unsigned)mv,
@@ -824,7 +824,7 @@ int bq79616_clear_startup_faults(void)
     /* Allow time for device to finish wake/auto-address transitions */
     HAL_Delay(10u);
 
-    LOG_INFO("Reading FAULT_SUMMARY before clear...");
+    LOG_PRINT(LOG_TYPE_INFO, "Reading FAULT_SUMMARY before clear...");
     status = bq7961x_single_read(DEVICE_ADDR, FAULT_SUMMARY, &val, sizeof(val), BQ_FIRST_READ_TIMEOUT_MS);
     if (status != 0) {
         /* Retry a couple of times before giving up */
@@ -832,49 +832,49 @@ int bq79616_clear_startup_faults(void)
         status = bq7961x_single_read(DEVICE_ADDR, FAULT_SUMMARY, &val, sizeof(val), BQ_FIRST_READ_TIMEOUT_MS);
     }
     if (status != 0) {
-        LOG_ERROR("Failed to read FAULT_SUMMARY");
+        LOG_PRINT(LOG_TYPE_ERROR, "Failed to read FAULT_SUMMARY");
         return status;
     }
 
     summary = val;
-    LOG_INFO("FAULT_SUMMARY before clear = 0x%02X", summary);
+    LOG_PRINT(LOG_TYPE_INFO, "FAULT_SUMMARY before clear = 0x%02X", summary);
 
     /* Optional detail reads */
     (void)bq7961x_single_read(DEVICE_ADDR, FAULT_SYS, &val, sizeof(val), BQ_FAST_TIMEOUT_MS);
-    LOG_INFO("FAULT_SYS   = 0x%02X", val);
+    LOG_PRINT(LOG_TYPE_INFO, "FAULT_SYS   = 0x%02X", val);
 
     (void)bq7961x_single_read(DEVICE_ADDR, FAULT_PWR1, &val, sizeof(val), BQ_FAST_TIMEOUT_MS);
-    LOG_INFO("FAULT_PWR1  = 0x%02X", val);
+    LOG_PRINT(LOG_TYPE_INFO, "FAULT_PWR1  = 0x%02X", val);
 
     (void)bq7961x_single_read(DEVICE_ADDR, FAULT_PWR2, &val, sizeof(val), BQ_FAST_TIMEOUT_MS);
-    LOG_INFO("FAULT_PWR2  = 0x%02X", val);
+    LOG_PRINT(LOG_TYPE_INFO, "FAULT_PWR2  = 0x%02X", val);
 
     (void)bq7961x_single_read(DEVICE_ADDR, FAULT_OV1, &val, sizeof(val), BQ_FAST_TIMEOUT_MS);
-    LOG_INFO("FAULT_OV1   = 0x%02X", val);
+    LOG_PRINT(LOG_TYPE_INFO, "FAULT_OV1   = 0x%02X", val);
 
     (void)bq7961x_single_read(DEVICE_ADDR, FAULT_OV2, &val, sizeof(val), BQ_FAST_TIMEOUT_MS);
-    LOG_INFO("FAULT_OV2   = 0x%02X", val);
+    LOG_PRINT(LOG_TYPE_INFO, "FAULT_OV2   = 0x%02X", val);
 
     (void)bq7961x_single_read(DEVICE_ADDR, FAULT_UV1, &val, sizeof(val), BQ_FAST_TIMEOUT_MS);
-    LOG_INFO("FAULT_UV1   = 0x%02X", val);
+    LOG_PRINT(LOG_TYPE_INFO, "FAULT_UV1   = 0x%02X", val);
 
     (void)bq7961x_single_read(DEVICE_ADDR, FAULT_UV2, &val, sizeof(val), BQ_FAST_TIMEOUT_MS);
-    LOG_INFO("FAULT_UV2   = 0x%02X", val);
+    LOG_PRINT(LOG_TYPE_INFO, "FAULT_UV2   = 0x%02X", val);
 
     (void)bq7961x_single_read(DEVICE_ADDR, FAULT_COMM1, &val, sizeof(val), BQ_FAST_TIMEOUT_MS);
-    LOG_INFO("FAULT_COMM1 = 0x%02X", val);
+    LOG_PRINT(LOG_TYPE_INFO, "FAULT_COMM1 = 0x%02X", val);
 
     (void)bq7961x_single_read(DEVICE_ADDR, FAULT_COMM2, &val, sizeof(val), BQ_FAST_TIMEOUT_MS);
-    LOG_INFO("FAULT_COMM2 = 0x%02X", val);
+    LOG_PRINT(LOG_TYPE_INFO, "FAULT_COMM2 = 0x%02X", val);
 
     (void)bq7961x_single_read(DEVICE_ADDR, FAULT_COMM3, &val, sizeof(val), BQ_FAST_TIMEOUT_MS);
-    LOG_INFO("FAULT_COMM3 = 0x%02X", val);
+    LOG_PRINT(LOG_TYPE_INFO, "FAULT_COMM3 = 0x%02X", val);
 
     /* If CUST_CRC fault (bit 5 of FAULT_SUMMARY) is set, update CRC then clear */
     if (summary & 0x20u) {
         status = bq79616_update_cust_crc();
         if (status != 0) {
-            LOG_WARN("CUST_CRC update failed (bq_status=%d); masking to allow run", status);
+            LOG_PRINT(LOG_TYPE_WARN, "CUST_CRC update failed (bq_status=%d); masking to allow run", status);
             (void)WriteReg(0u, FAULT_MSK2, 0x40u, 1u, FRMWRT_ALL_W);
         }
     }
@@ -883,36 +883,36 @@ int bq79616_clear_startup_faults(void)
     uint64_t rst1_val = 0xFFFFu;
     status = WriteReg(DEVICE_ADDR, FAULT_RST1, rst1_val, 2u, FRMWRT_SGL_W);
     if (status != 0) {
-        LOG_ERROR("Failed to write FAULT_RST1");
+        LOG_PRINT(LOG_TYPE_ERROR, "Failed to write FAULT_RST1");
         return status;
     }
-    LOG_INFO("Wrote FAULT_RST1 = 0x%04X", (unsigned)rst1_val);
+    LOG_PRINT(LOG_TYPE_INFO, "Wrote FAULT_RST1 = 0x%04X", (unsigned)rst1_val);
 
     /* Clear communication-related faults */
     uint64_t rst2_val = 0xFFFFu;
     status = WriteReg(DEVICE_ADDR, FAULT_RST2, rst2_val, 2u, FRMWRT_SGL_W);
     if (status != 0) {
-        LOG_ERROR("Failed to write FAULT_RST2");
+        LOG_PRINT(LOG_TYPE_ERROR, "Failed to write FAULT_RST2");
         return status;
     }
-    LOG_INFO("Wrote FAULT_RST2 = 0x%04X", (unsigned)rst2_val);
+    LOG_PRINT(LOG_TYPE_INFO, "Wrote FAULT_RST2 = 0x%04X", (unsigned)rst2_val);
 
     HAL_Delay(2u);
 
     status = bq7961x_single_read(DEVICE_ADDR, FAULT_SUMMARY, &val, sizeof(val), BQ_FAST_TIMEOUT_MS);
     if (status != 0) {
-        LOG_ERROR("Failed to read FAULT_SUMMARY after clear");
+        LOG_PRINT(LOG_TYPE_ERROR, "Failed to read FAULT_SUMMARY after clear");
         return status;
     }
 
-    LOG_INFO("FAULT_SUMMARY after clear = 0x%02X", val);
+    LOG_PRINT(LOG_TYPE_INFO, "FAULT_SUMMARY after clear = 0x%02X", val);
 
     if (val != 0u) {
-        LOG_WARN("Fault is still present; underlying condition likely still exists");
+        LOG_PRINT(LOG_TYPE_WARN, "Fault is still present; underlying condition likely still exists");
         return 1;
     }
 
-    LOG_INFO("Fault clear successful");
+    LOG_PRINT(LOG_TYPE_INFO, "Fault clear successful");
     return 0;
 }
 
@@ -923,17 +923,17 @@ int bq79616_update_cust_crc(void)
 
     int status = bq7961x_single_read(DEVICE_ADDR, CUST_CRC_RSLT_HI, crc_rslt, 2u, BQ_FIRST_READ_TIMEOUT_MS);
     if (status != 0) {
-        LOG_ERROR("CUST_CRC_RSLT read failed (bq_status=%d)", status);
+        LOG_PRINT(LOG_TYPE_ERROR, "CUST_CRC_RSLT read failed (bq_status=%d)", status);
         return status;
     }
 
     uint64_t crc_val = ((uint16_t)crc_rslt[0] << 8) | crc_rslt[1];
     status = WriteReg(DEVICE_ADDR, CUST_CRC_HI, crc_val, 2u, FRMWRT_SGL_W);
     if (status != 0) {
-        LOG_ERROR("CUST_CRC write failed (bq_status=%d)", status);
+        LOG_PRINT(LOG_TYPE_ERROR, "CUST_CRC write failed (bq_status=%d)", status);
         return status;
     }
-    LOG_INFO("CUST_CRC updated to 0x%04X (RSLT_HI/LO=%02X%02X)", (unsigned)crc_val, crc_rslt[0], crc_rslt[1]);
+    LOG_PRINT(LOG_TYPE_INFO, "CUST_CRC updated to 0x%04X (RSLT_HI/LO=%02X%02X)", (unsigned)crc_val, crc_rslt[0], crc_rslt[1]);
 
     /* Clear faults after CRC update */
     (void)WriteReg(DEVICE_ADDR, FAULT_RST1, 0xFFFFu, 2u, FRMWRT_SGL_W);
@@ -952,38 +952,38 @@ int bq79616_log_fault_registers(void)
 
     status = bq7961x_single_read(DEVICE_ADDR, FAULT_SUMMARY, &summary, sizeof(summary), BQ_FIRST_READ_TIMEOUT_MS);
     if (status != 0) {
-        LOG_ERROR("FAULT_SUMMARY read failed (bq_status=%d)", status);
+        LOG_PRINT(LOG_TYPE_ERROR, "FAULT_SUMMARY read failed (bq_status=%d)", status);
         return status;
     }
-    LOG_INFO("FAULT_SUMMARY=0x%02X", summary);
+    LOG_PRINT(LOG_TYPE_INFO, "FAULT_SUMMARY=0x%02X", summary);
 
     if (summary != 0u) {
         if (bq7961x_single_read(DEVICE_ADDR, FAULT_SYS, &val, sizeof(val), BQ_FAST_TIMEOUT_MS) == 0)
-            LOG_INFO("FAULT_SYS  =0x%02X", val);
+            LOG_PRINT(LOG_TYPE_INFO, "FAULT_SYS  =0x%02X", val);
         if (bq7961x_single_read(DEVICE_ADDR, FAULT_PWR1, &val, sizeof(val), BQ_FAST_TIMEOUT_MS) == 0)
-            LOG_INFO("FAULT_PWR1 =0x%02X", val);
+            LOG_PRINT(LOG_TYPE_INFO, "FAULT_PWR1 =0x%02X", val);
         if (bq7961x_single_read(DEVICE_ADDR, FAULT_PWR2, &val, sizeof(val), BQ_FAST_TIMEOUT_MS) == 0)
-            LOG_INFO("FAULT_PWR2 =0x%02X", val);
+            LOG_PRINT(LOG_TYPE_INFO, "FAULT_PWR2 =0x%02X", val);
         if (bq7961x_single_read(DEVICE_ADDR, FAULT_OV1, &val, sizeof(val), BQ_FAST_TIMEOUT_MS) == 0)
-            LOG_INFO("FAULT_OV1  =0x%02X", val);
+            LOG_PRINT(LOG_TYPE_INFO, "FAULT_OV1  =0x%02X", val);
         if (bq7961x_single_read(DEVICE_ADDR, FAULT_OV2, &val, sizeof(val), BQ_FAST_TIMEOUT_MS) == 0)
-            LOG_INFO("FAULT_OV2  =0x%02X", val);
+            LOG_PRINT(LOG_TYPE_INFO, "FAULT_OV2  =0x%02X", val);
         if (bq7961x_single_read(DEVICE_ADDR, FAULT_UV1, &val, sizeof(val), BQ_FAST_TIMEOUT_MS) == 0)
-            LOG_INFO("FAULT_UV1  =0x%02X", val);
+            LOG_PRINT(LOG_TYPE_INFO, "FAULT_UV1  =0x%02X", val);
         if (bq7961x_single_read(DEVICE_ADDR, FAULT_UV2, &val, sizeof(val), BQ_FAST_TIMEOUT_MS) == 0)
-            LOG_INFO("FAULT_UV2  =0x%02X", val);
+            LOG_PRINT(LOG_TYPE_INFO, "FAULT_UV2  =0x%02X", val);
         if (bq7961x_single_read(DEVICE_ADDR, FAULT_COMM1, &val, sizeof(val), BQ_FAST_TIMEOUT_MS) == 0)
-            LOG_INFO("FAULT_COMM1=0x%02X", val);
+            LOG_PRINT(LOG_TYPE_INFO, "FAULT_COMM1=0x%02X", val);
         if (bq7961x_single_read(DEVICE_ADDR, FAULT_COMM2, &val, sizeof(val), BQ_FAST_TIMEOUT_MS) == 0)
-            LOG_INFO("FAULT_COMM2=0x%02X", val);
+            LOG_PRINT(LOG_TYPE_INFO, "FAULT_COMM2=0x%02X", val);
         if (bq7961x_single_read(DEVICE_ADDR, FAULT_COMM3, &val, sizeof(val), BQ_FAST_TIMEOUT_MS) == 0)
-            LOG_INFO("FAULT_COMM3=0x%02X", val);
+            LOG_PRINT(LOG_TYPE_INFO, "FAULT_COMM3=0x%02X", val);
 
         /* If CRC fault present, attempt update here too */
         if (summary & 0x20u) {
             status = bq79616_update_cust_crc();
             if (status != 0) {
-                LOG_WARN("CUST_CRC update (periodic) failed bq_status=%d; masking", status);
+                LOG_PRINT(LOG_TYPE_WARN, "CUST_CRC update (periodic) failed bq_status=%d; masking", status);
                 (void)WriteReg(0u, FAULT_MSK2, 0x40u, 1u, FRMWRT_ALL_W);
             }
         }
@@ -1157,20 +1157,20 @@ bool bq79616_try_init(void)
 
     bq_status = bq79616_init_device();
     if (bq_status != 0) {
-        LOG_WARN("BQ init failed (bq_status=%d). Continuing with ADC/CAN only.", bq_status);
+        LOG_PRINT(LOG_TYPE_WARN, "BQ init failed (bq_status=%d). Continuing with ADC/CAN only.", bq_status);
         return false;
     }
 
     if (bq79616_read_partid_once(&partid) == 0) {
-        LOG_INFO("BQ79616 PARTID=0x%02X", partid);
+        LOG_PRINT(LOG_TYPE_INFO, "BQ79616 PARTID=0x%02X", partid);
     } else {
-        LOG_WARN("BQ PARTID read failed after init. Continuing with BQ keep-alive attempt.");
+        LOG_PRINT(LOG_TYPE_WARN, "BQ PARTID read failed after init. Continuing with BQ keep-alive attempt.");
     }
 
     /* Best-effort startup fault clear (including CUST_CRC handling). */
     clear_status = bq79616_clear_startup_faults();
     if (clear_status != 0) {
-        LOG_WARN("BQ startup fault clear returned %d; continuing with BQ active.", clear_status);
+        LOG_PRINT(LOG_TYPE_WARN, "BQ startup fault clear returned %d; continuing with BQ active.", clear_status);
     }
 
     return true;

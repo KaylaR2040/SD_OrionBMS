@@ -66,7 +66,7 @@ static void CAN_LogActiveFaultChannels_(const ThermistorCache_t *cache, uint16_t
             continue;
         }
 
-        LOG_WARN("Fault active: therm=%u reason=%s adc=%u temp=%dC",
+        LOG_PRINT(LOG_TYPE_WARN, "Fault active: therm=%u reason=%s adc=%u temp=%dC",
                  (unsigned)(i + 1u),
                  CAN_ThermFaultReason_(cache, i),
                  (unsigned)cache->adc_raw[i],
@@ -139,7 +139,7 @@ static void CAN_LogTxFailure_(const char *frame_name, uint32_t can_id, int resul
     if (result == CAN_TX_RESULT_TRANSIENT_DROP) {
         dropped_frames++;
         if ((now - last_drop_log_ms) >= CAN_TX_DROP_LOG_PERIOD_MS) {
-            LOG_WARN("CAN TX congested/no-ack: dropped=%lu last=%s id=0x%08lX",
+            LOG_PRINT(LOG_TYPE_WARN, "CAN TX congested/no-ack: dropped=%lu last=%s id=0x%08lX",
                      (unsigned long)dropped_frames,
                      frame_name,
                      (unsigned long)can_id);
@@ -149,7 +149,7 @@ static void CAN_LogTxFailure_(const char *frame_name, uint32_t can_id, int resul
         return;
     }
 
-    LOG_WARN("TX 0x%08lX %s failed result=%d",
+    LOG_PRINT(LOG_TYPE_WARN, "TX 0x%08lX %s failed result=%d",
              (unsigned long)can_id,
              frame_name,
              result);
@@ -181,7 +181,7 @@ static void CAN_LogExternalVoltageTx_(uint32_t ext_id,
         s_last_segment_ms[segment_index] = now_ms;
     }
 
-    LOG_DEBUG("TX 0x%08lX extv seg=%u dt_any=%lums dt_seg=%lums [%02X %02X %02X %02X %02X %02X %02X %02X]",
+    LOG_PRINT(LOG_TYPE_DEBUG, "TX 0x%08lX extv seg=%u dt_any=%lums dt_seg=%lums [%02X %02X %02X %02X %02X %02X %02X %02X]",
               (unsigned long)ext_id,
               segment_index,
               (unsigned long)dt_any_ms,
@@ -391,7 +391,7 @@ static void CAN_BuildModuleCacheFromAdc(uint8_t start_idx,
 
         if (therm_too_hot) {
             const uint32_t millivolts = ((uint32_t)adc_raw * (uint32_t)THERM_REF_MV) / (uint32_t)THERM_MAX_COUNTS;
-            LOG_WARN("Thermistor %u too hot: %dC (adc=%u, %lu.%03lu V)",
+            LOG_PRINT(LOG_TYPE_WARN, "Thermistor %u too hot: %dC (adc=%u, %lu.%03lu V)",
                      (unsigned)(abs_idx + 1U), (int)temp_c,
                      (unsigned)adc_raw,
                      (unsigned long)(millivolts / 1000u),
@@ -479,7 +479,7 @@ void ConvertAllThermistors(const uint16_t *adc_values, uint8_t count)
             hot_mask |= therm_mask;
             if ((s_prev_hot_mask & therm_mask) == 0u) {
                 const uint32_t millivolts = ((uint32_t)adc_raw * (uint32_t)THERM_REF_MV) / (uint32_t)THERM_MAX_COUNTS;
-                LOG_WARN("Thermistor %u too hot: %dC (adc=%u, %lu.%03lu V)",
+                LOG_PRINT(LOG_TYPE_WARN, "Thermistor %u too hot: %dC (adc=%u, %lu.%03lu V)",
                          (unsigned)(i + 1U), (int)temp_c,
                          (unsigned)adc_raw,
                          (unsigned long)(millivolts / 1000u),
@@ -498,7 +498,7 @@ void ConvertAllThermistors(const uint16_t *adc_values, uint8_t count)
             s_cache.fault_mask |= therm_mask;
             s_cache.module_fault = true;
             if ((s_prev_fault_mask & therm_mask) == 0u) {
-                LOG_WARN("Thermistor %u fault set (mask=0x%04X) adc=%u temp=%dC",
+                LOG_PRINT(LOG_TYPE_WARN, "Thermistor %u fault set (mask=0x%04X) adc=%u temp=%dC",
                          (unsigned)(i + 1U),
                          (unsigned)s_cache.fault_mask,
                          (unsigned)adc_raw,
@@ -508,7 +508,7 @@ void ConvertAllThermistors(const uint16_t *adc_values, uint8_t count)
         }
 
         if ((s_prev_fault_mask & therm_mask) != 0u) {
-            LOG_INFO("Thermistor %u fault cleared adc=%u temp=%dC",
+            LOG_PRINT(LOG_TYPE_INFO, "Thermistor %u fault cleared adc=%u temp=%dC",
                      (unsigned)(i + 1U),
                      (unsigned)adc_raw,
                      (int)temp_c);
@@ -545,32 +545,32 @@ void ConvertAllThermistors(const uint16_t *adc_values, uint8_t count)
         const uint16_t therm_mask = CAN_ThermMask(i);
         if (((s_prev_hot_mask & therm_mask) != 0u) &&
             ((hot_mask & therm_mask) == 0u)) {
-            LOG_INFO("Thermistor %u no longer too hot", (unsigned)(i + 1U));
+            LOG_PRINT(LOG_TYPE_INFO, "Thermistor %u no longer too hot", (unsigned)(i + 1U));
         }
     }
 
     const bool pack_too_hot = (s_cache.max_temp > THERM_HOT_C);
     if (pack_too_hot && !s_prev_pack_hot) {
-        LOG_WARN("PACK TOO HOT: max=%dC id=%u", (int)s_cache.max_temp, (unsigned)s_cache.max_id);
+        LOG_PRINT(LOG_TYPE_WARN, "PACK TOO HOT: max=%dC id=%u", (int)s_cache.max_temp, (unsigned)s_cache.max_id);
     }
     if (!pack_too_hot && s_prev_pack_hot) {
-        LOG_INFO("PACK TEMP NORMALIZED: max=%dC", (int)s_cache.max_temp);
+        LOG_PRINT(LOG_TYPE_INFO, "PACK TEMP NORMALIZED: max=%dC", (int)s_cache.max_temp);
     }
     s_prev_pack_hot = pack_too_hot;
 
     if (s_cache.fault_mask != s_prev_fault_mask) {
         if (s_cache.fault_mask != 0u) {
-            LOG_WARN("Thermistor fault mask=0x%04X valid=%u",
+            LOG_PRINT(LOG_TYPE_WARN, "Thermistor fault mask=0x%04X valid=%u",
                      (unsigned)s_cache.fault_mask,
                      (unsigned)s_cache.valid_count);
             CAN_LogActiveFaultChannels_(&s_cache, s_cache.fault_mask);
         } else {
-            LOG_INFO("Thermistor fault mask cleared valid=%u", (unsigned)s_cache.valid_count);
+            LOG_PRINT(LOG_TYPE_INFO, "Thermistor fault mask cleared valid=%u", (unsigned)s_cache.valid_count);
         }
         s_last_fault_summary_log_ms = now_ms;
     } else if ((s_cache.fault_mask != 0u) &&
                ((now_ms - s_last_fault_summary_log_ms) >= THERM_FAULT_PERSIST_LOG_MS)) {
-        LOG_WARN("Thermistor fault persists mask=0x%04X valid=%u",
+        LOG_PRINT(LOG_TYPE_WARN, "Thermistor fault persists mask=0x%04X valid=%u",
                  (unsigned)s_cache.fault_mask,
                  (unsigned)s_cache.valid_count);
         CAN_LogActiveFaultChannels_(&s_cache, s_cache.fault_mask);

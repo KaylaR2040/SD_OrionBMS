@@ -18,7 +18,7 @@ static void error_delay(void)
 // TODO: Errors shoould ot be handled liike this
 // Currnetly, we have two different error handling implmentaions:
 // 1. The Error_Handler() function in this file, which is called by HAL functions when they encounter an error. This function disables interrupts and blinks LED5 indefinitely to indicate a fatal error.
-// 2. The LOG_ERROR() macro, which is used to log error messages to the UART console. This macro does not currently trigger the Error_Handler() function or any other error handling mechanism.
+// 2. The LOG_PRINT(LOG_TYPE_ERROR, ...) macro, which is used to log error messages to the UART console. This macro does not currently trigger the Error_Handler() function or any other error handling mechanism.
 // We should unify these two approaches so that all errors are handled consistently. 
 
 /* Fatal error handler that blinks LED5 forever */
@@ -28,7 +28,7 @@ void Error_Handler(void)
     LED_Init();
     LED_All_On();
     // Write to UART Logging system here
-    LOG_ERROR("Error occurred!");
+    LOG_PRINT(LOG_TYPE_ERROR, "Error occurred!");
 
     while (1) {
         LED_All_Toggle();

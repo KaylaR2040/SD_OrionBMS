@@ -314,7 +314,7 @@ void CAN_Debug_TryLogClaim(void)
     }
 
     const uint32_t claim_id = 0x18EEFF00u | (uint32_t)s_dbg.source_addr;
-    LOG_DEBUG("TX 0x%08lX dt=%lums module=%u target=0x%02X [%02X %02X %02X %02X %02X %02X %02X %02X]",
+    LOG_PRINT(LOG_TYPE_DEBUG, "TX 0x%08lX dt=%lums module=%u target=0x%02X [%02X %02X %02X %02X %02X %02X %02X %02X]",
               (unsigned long)claim_id,
               (unsigned long)s_dbg.last_claim_interval_ms,
               s_dbg.module_index,
@@ -340,7 +340,7 @@ void CAN_Debug_TryLogBms(void)
     }
 
     const uint32_t bms_id = 0x18390000u | ((uint32_t)s_dbg.bms_target_addr << 8) | (uint32_t)s_dbg.source_addr;
-    LOG_DEBUG("TX 0x%08lX bms dt=%lums module=%u low=%d high=%d avg=%d en=%u valid=%u fault=%u hi_id=%u lo_id=%u csum=0x%02X [%02X %02X %02X %02X %02X %02X %02X %02X]",
+    LOG_PRINT(LOG_TYPE_DEBUG, "TX 0x%08lX bms dt=%lums module=%u low=%d high=%d avg=%d en=%u valid=%u fault=%u hi_id=%u lo_id=%u csum=0x%02X [%02X %02X %02X %02X %02X %02X %02X %02X]",
               (unsigned long)bms_id,
               (unsigned long)s_dbg.last_bms_interval_ms,
               s_dbg.module_index,
@@ -378,7 +378,7 @@ void CAN_Debug_TryLogGeneral(void)
     const unsigned fault = (unsigned)((fault_mask & (uint16_t)(1u << idx)) != 0u);
 
     const uint32_t general_id = 0x18380000u | ((uint32_t)s_dbg.bms_target_addr << 8) | (uint32_t)s_dbg.source_addr;
-    LOG_DEBUG("TX 0x%08lX gen dt=%lums global_id=%u local_id=%u fault=%u temp=%d low=%d high=%d hi_id=%u lo_id=%u [%02X %02X %02X %02X %02X %02X %02X %02X]",
+    LOG_PRINT(LOG_TYPE_DEBUG, "TX 0x%08lX gen dt=%lums global_id=%u local_id=%u fault=%u temp=%d low=%d high=%d hi_id=%u lo_id=%u [%02X %02X %02X %02X %02X %02X %02X %02X]",
               (unsigned long)general_id,
               (unsigned long)s_dbg.last_general_interval_ms,
               (unsigned)s_dbg.last_general_global_id,
@@ -404,17 +404,17 @@ void CAN_DebugPrintDump(const ThermistorCache_t *cache)
     if (!cache) {
         return;
     }
-    LOG_INFO("THERM DUMP count=%u updated=%lums ago", cache->count,
+    LOG_PRINT(LOG_TYPE_INFO, "THERM DUMP count=%u updated=%lums ago", cache->count,
              (unsigned long)(HAL_GetTick() - cache->last_update_ms));
     for (uint8_t i = 0U; i < cache->count; i++) {
-        LOG_INFO("  ch=%u adc=%u temp=%dC", i,
+        LOG_PRINT(LOG_TYPE_INFO, "  ch=%u adc=%u temp=%dC", i,
                  (unsigned)cache->adc_raw[i], (int)cache->temps[i]);
     }
 }
 
 void CAN_DebugPrintTiming(void)
 {
-    LOG_INFO("TIMING claim=%lums@%lums bms=%lums@%lums gen=%lums@%lums",
+    LOG_PRINT(LOG_TYPE_INFO, "TIMING claim=%lums@%lums bms=%lums@%lums gen=%lums@%lums",
              (unsigned long)s_dbg.last_claim_interval_ms,
              (unsigned long)s_dbg.last_claim_ts_ms,
              (unsigned long)s_dbg.last_bms_interval_ms,
@@ -429,21 +429,21 @@ void CAN_DebugPrintThermistor(const ThermistorCache_t *cache, uint8_t therm_inde
         return;
     }
     if (therm_index >= cache->count) {
-        LOG_WARN("Thermistor %u out of range (n=%u)", therm_index, cache->count);
+        LOG_PRINT(LOG_TYPE_WARN, "Thermistor %u out of range (n=%u)", therm_index, cache->count);
         return;
     }
 
-    LOG_INFO("THERM %u adc=%u temp=%dC", therm_index,
+    LOG_PRINT(LOG_TYPE_INFO, "THERM %u adc=%u temp=%dC", therm_index,
              (unsigned)cache->adc_raw[therm_index],
              (int)cache->temps[therm_index]);
-    LOG_INFO("  fault=%u override=%u",
+    LOG_PRINT(LOG_TYPE_INFO, "  fault=%u override=%u",
              (unsigned)((cache->fault_mask & (uint16_t)(1u << therm_index)) != 0u),
              (unsigned)(CAN_Debug_GetTempOverrideMask() & (uint16_t)(1u << therm_index)));
 }
 
 void CAN_DebugPrintFaultState(void)
 {
-    LOG_INFO("FAULT module_fault=%u enabled=%u valid=%u fault_mask=0x%04X temp_override_mask=0x%04X sensor_fault_mask=0x%04X",
+    LOG_PRINT(LOG_TYPE_INFO, "FAULT module_fault=%u enabled=%u valid=%u fault_mask=0x%04X temp_override_mask=0x%04X sensor_fault_mask=0x%04X",
              s_dbg.module_fault,
              s_dbg.enabled_count,
              s_dbg.valid_count,
@@ -458,8 +458,8 @@ void CAN_DebugPrintCanSnapshot(void)
     const uint32_t bms_id = 0x18390000u | ((uint32_t)s_dbg.bms_target_addr << 8) | (uint32_t)s_dbg.source_addr;
     const uint32_t general_id = 0x18380000u | ((uint32_t)s_dbg.bms_target_addr << 8) | (uint32_t)s_dbg.source_addr;
 
-    LOG_INFO("CAN SNAPSHOT (last sent)");
-    LOG_INFO("  Claim 0x%08lX interval=%lums source=0x%02X target=0x%02X module=%u [%02X %02X %02X %02X %02X %02X %02X %02X]",
+    LOG_PRINT(LOG_TYPE_INFO, "CAN SNAPSHOT (last sent)");
+    LOG_PRINT(LOG_TYPE_INFO, "  Claim 0x%08lX interval=%lums source=0x%02X target=0x%02X module=%u [%02X %02X %02X %02X %02X %02X %02X %02X]",
              (unsigned long)claim_id,
              (unsigned long)s_dbg.last_claim_interval_ms,
              s_dbg.source_addr,
@@ -467,7 +467,7 @@ void CAN_DebugPrintCanSnapshot(void)
              s_dbg.module_index,
              s_dbg.claim[0], s_dbg.claim[1], s_dbg.claim[2], s_dbg.claim[3],
              s_dbg.claim[4], s_dbg.claim[5], s_dbg.claim[6], s_dbg.claim[7]);
-    LOG_INFO("  BMS   0x%08lX interval=%lums module=%u low=%d high=%d avg=%d enabled=%u valid=%u fault=%u hi_id=%u lo_id=%u checksum=0x%02X [%02X %02X %02X %02X %02X %02X %02X %02X]",
+    LOG_PRINT(LOG_TYPE_INFO, "  BMS   0x%08lX interval=%lums module=%u low=%d high=%d avg=%d enabled=%u valid=%u fault=%u hi_id=%u lo_id=%u checksum=0x%02X [%02X %02X %02X %02X %02X %02X %02X %02X]",
              (unsigned long)bms_id,
              (unsigned long)s_dbg.last_bms_interval_ms,
              s_dbg.module_index,
@@ -482,7 +482,7 @@ void CAN_DebugPrintCanSnapshot(void)
              s_dbg.last_bms_checksum,
              s_dbg.bms[0], s_dbg.bms[1], s_dbg.bms[2], s_dbg.bms[3],
              s_dbg.bms[4], s_dbg.bms[5], s_dbg.bms[6], s_dbg.bms[7]);
-    LOG_INFO("  GEN   0x%08lX interval=%lums global_id=%u local_id=%u fault=%u temp=%d low=%d high=%d hi_id=%u lo_id=%u [%02X %02X %02X %02X %02X %02X %02X %02X]",
+    LOG_PRINT(LOG_TYPE_INFO, "  GEN   0x%08lX interval=%lums global_id=%u local_id=%u fault=%u temp=%d low=%d high=%d hi_id=%u lo_id=%u [%02X %02X %02X %02X %02X %02X %02X %02X]",
              (unsigned long)general_id,
              (unsigned long)s_dbg.last_general_interval_ms,
              (unsigned)s_dbg.last_general_global_id,

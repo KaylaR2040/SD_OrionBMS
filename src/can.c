@@ -54,7 +54,7 @@ void CAN_App_Init(uint32_t kbps)
     }
 
     if (CAN_Comm_Init_kbps(init_kbps) != 0) {
-        LOG_ERROR("FDCAN init failed");
+        LOG_PRINT(LOG_TYPE_ERROR, "FDCAN init failed");
         Error_Handler();
     }
 
@@ -92,7 +92,7 @@ int CAN_Comm_Init_kbps(uint32_t kbps)
         }
     }
 
-    LOG_INFO("FDCAN nominal timing: %lu kbps presc=%lu tseg1=%lu tseg2=%lu sjw=%lu",
+    LOG_PRINT(LOG_TYPE_INFO, "FDCAN nominal timing: %lu kbps presc=%lu tseg1=%lu tseg2=%lu sjw=%lu",
              (unsigned long)kbps,
              (unsigned long)presc,
              (unsigned long)tseg1,
@@ -168,7 +168,7 @@ void CAN_App_InitData(can_app_ctx_t *ctx)
     ctx->therm_index = 0; 
 
     uint32_t err = HAL_FDCAN_GetError(&g_fdcan1);
-    LOG_INFO("ERROR CODE AFTER INIT: 0x%08lX", (unsigned long)err);
+    LOG_PRINT(LOG_TYPE_INFO, "ERROR CODE AFTER INIT: 0x%08lX", (unsigned long)err);
 }
 
 void CAN_SetSchedulingEnabled(bool enabled, bool send_immediately)
@@ -296,12 +296,12 @@ int CAN_Comm_SendExt(uint32_t ext_id, const uint8_t *data, uint8_t len)
     if (HAL_FDCAN_AddMessageToTxFifoQ(&g_fdcan1, &txHeader, (uint8_t *)data) != HAL_OK) {
         if (CAN_ShouldLogTxError_()) {
             if ((g_fdcan1.ErrorCode & HAL_FDCAN_ERROR_FIFO_FULL) != 0u) {
-                LOG_WARN("FDCAN TX FIFO full ID=0x%08lX free=%lu state=%lu",
+                LOG_PRINT(LOG_TYPE_WARN, "FDCAN TX FIFO full ID=0x%08lX free=%lu state=%lu",
                          (unsigned long)ext_id,
                          (unsigned long)HAL_FDCAN_GetTxFifoFreeLevel(&g_fdcan1),
                          (unsigned long)HAL_FDCAN_GetState(&g_fdcan1));
             } else {
-                LOG_WARN("FDCAN TX add failed ID=0x%08lX err=0x%08lX state=%lu",
+                LOG_PRINT(LOG_TYPE_WARN, "FDCAN TX add failed ID=0x%08lX err=0x%08lX state=%lu",
                          (unsigned long)ext_id,
                          (unsigned long)g_fdcan1.ErrorCode,
                          (unsigned long)HAL_FDCAN_GetState(&g_fdcan1));

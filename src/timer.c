@@ -102,19 +102,19 @@ void Timer6_Init(void)
     uint32_t prescaler = (timer_clk / TIMER6_CLK_HZ) - 1u;
 
 #if TIMER_VERBOSE_LOGS
-    LOG_INFO("=== TIM6 INITIALIZATION DEBUG ===");
-    LOG_INFO("  SystemCoreClock = %lu Hz", (unsigned long)SystemCoreClock);
-    LOG_INFO("  HAL_RCC_GetPCLK1Freq() = %lu Hz", (unsigned long)HAL_RCC_GetPCLK1Freq());
-    LOG_INFO("  Actual timer_clk = %lu Hz", (unsigned long)timer_clk);
-    LOG_INFO("  TIMER6_CLK_HZ target = %lu Hz (10 kHz = 0.1ms per count)", (unsigned long)TIMER6_CLK_HZ);
-    LOG_INFO("  Calculated prescaler = %lu", (unsigned long)prescaler);
-    LOG_INFO("  TIMER6_PERIOD = %u -> interrupt every %u * %u = %lums",
+    LOG_PRINT(LOG_TYPE_INFO, "=== TIM6 INITIALIZATION DEBUG ===");
+    LOG_PRINT(LOG_TYPE_INFO, "  SystemCoreClock = %lu Hz", (unsigned long)SystemCoreClock);
+    LOG_PRINT(LOG_TYPE_INFO, "  HAL_RCC_GetPCLK1Freq() = %lu Hz", (unsigned long)HAL_RCC_GetPCLK1Freq());
+    LOG_PRINT(LOG_TYPE_INFO, "  Actual timer_clk = %lu Hz", (unsigned long)timer_clk);
+    LOG_PRINT(LOG_TYPE_INFO, "  TIMER6_CLK_HZ target = %lu Hz (10 kHz = 0.1ms per count)", (unsigned long)TIMER6_CLK_HZ);
+    LOG_PRINT(LOG_TYPE_INFO, "  Calculated prescaler = %lu", (unsigned long)prescaler);
+    LOG_PRINT(LOG_TYPE_INFO, "  TIMER6_PERIOD = %u -> interrupt every %u * %u = %lums",
              TIMER6_PERIOD,
              (unsigned)TIMER6_PERIOD,
              (unsigned)(prescaler + 1u),
              (unsigned long)(TIMER6_PERIOD * (prescaler + 1u) / (timer_clk / 1000u)));
-    LOG_INFO("  TICKS_FOR_100MS = %u -> 100ms flag every %u interrupts", TICKS_FOR_100MS, TICKS_FOR_100MS);
-    LOG_INFO("  TICKS_FOR_200MS = %u -> 200ms flag every %u interrupts", TICKS_FOR_200MS, TICKS_FOR_200MS);
+    LOG_PRINT(LOG_TYPE_INFO, "  TICKS_FOR_100MS = %u -> 100ms flag every %u interrupts", TICKS_FOR_100MS, TICKS_FOR_100MS);
+    LOG_PRINT(LOG_TYPE_INFO, "  TICKS_FOR_200MS = %u -> 200ms flag every %u interrupts", TICKS_FOR_200MS, TICKS_FOR_200MS);
 #endif
 
     g_htim6.Instance = TIM6;
@@ -143,14 +143,14 @@ void Timer7_Init(void)
     uint32_t prescaler = (timer_clk / TIMER7_CLK_HZ) - 1u;
 
 #if TIMER_VERBOSE_LOGS
-    LOG_INFO("=== TIM7 (CAN-DEDICATED) INITIALIZATION ===");
-    LOG_INFO("  Actual timer_clk = %lu Hz", (unsigned long)timer_clk);
-    LOG_INFO("  TIMER7_CLK_HZ target = %lu Hz (10 kHz = 0.1ms per count)", (unsigned long)TIMER7_CLK_HZ);
-    LOG_INFO("  Calculated prescaler = %lu", (unsigned long)prescaler);
-    LOG_INFO("  TIMER7_PERIOD = %u -> interrupt every %lums",
+    LOG_PRINT(LOG_TYPE_INFO, "=== TIM7 (CAN-DEDICATED) INITIALIZATION ===");
+    LOG_PRINT(LOG_TYPE_INFO, "  Actual timer_clk = %lu Hz", (unsigned long)timer_clk);
+    LOG_PRINT(LOG_TYPE_INFO, "  TIMER7_CLK_HZ target = %lu Hz (10 kHz = 0.1ms per count)", (unsigned long)TIMER7_CLK_HZ);
+    LOG_PRINT(LOG_TYPE_INFO, "  Calculated prescaler = %lu", (unsigned long)prescaler);
+    LOG_PRINT(LOG_TYPE_INFO, "  TIMER7_PERIOD = %u -> interrupt every %lums",
              TIMER7_PERIOD,
              (unsigned long)((TIMER7_PERIOD * 1000u) / TIMER7_CLK_HZ));
-    LOG_INFO("  CAN 100ms: every %u interrupt, CAN 200ms: every %u interrupts",
+    LOG_PRINT(LOG_TYPE_INFO, "  CAN 100ms: every %u interrupt, CAN 200ms: every %u interrupts",
              CAN_TICKS_FOR_100MS, CAN_TICKS_FOR_200MS);
 #endif
 
@@ -365,14 +365,14 @@ void Timer5_DisarmWake(void)
 /* Debug: Show internal counter state */
 void Timer_DebugPrintCounters(void)
 {
-    LOG_INFO("TIM6 Counter State:");
-    LOG_INFO("  TIM6->CNT = %u (raw counter, should cycle 0-99)", __HAL_TIM_GET_COUNTER(&g_htim6));
-    LOG_INFO("  s_isr_call_count = %lu (total TIM6 ISR calls since boot)", (unsigned long)s_isr_call_count);
-    LOG_INFO("  s_counter_100ms = %u (should be 0-9)", s_counter_100ms);
-    LOG_INFO("  s_counter_200ms = %u (should be 0-19)", s_counter_200ms);
-    LOG_INFO("  g_flag_100ms = %u (set by ISR when counter hits 10)", g_flag_100ms);
-    LOG_INFO("  g_flag_200ms = %u (set by ISR when counter hits 20)", g_flag_200ms);
-    LOG_INFO("Expected: TIM6 fires every 10ms, so ~10 calls per 100ms, ~20 calls per 200ms");
+    LOG_PRINT(LOG_TYPE_INFO, "TIM6 Counter State:");
+    LOG_PRINT(LOG_TYPE_INFO, "  TIM6->CNT = %u (raw counter, should cycle 0-99)", __HAL_TIM_GET_COUNTER(&g_htim6));
+    LOG_PRINT(LOG_TYPE_INFO, "  s_isr_call_count = %lu (total TIM6 ISR calls since boot)", (unsigned long)s_isr_call_count);
+    LOG_PRINT(LOG_TYPE_INFO, "  s_counter_100ms = %u (should be 0-9)", s_counter_100ms);
+    LOG_PRINT(LOG_TYPE_INFO, "  s_counter_200ms = %u (should be 0-19)", s_counter_200ms);
+    LOG_PRINT(LOG_TYPE_INFO, "  g_flag_100ms = %u (set by ISR when counter hits 10)", g_flag_100ms);
+    LOG_PRINT(LOG_TYPE_INFO, "  g_flag_200ms = %u (set by ISR when counter hits 20)", g_flag_200ms);
+    LOG_PRINT(LOG_TYPE_INFO, "Expected: TIM6 fires every 10ms, so ~10 calls per 100ms, ~20 calls per 200ms");
 }
 
 uint32_t Timer_GetIsrCallCount(void)

@@ -20,13 +20,13 @@ void Volt_RunBlockingStartup(void)
     if (bq79616_try_init()) {
         volt_status = ACTIVE;
         s_bq_state = BQ_STATE_READY;
-        LOG_INFO("BQ startup state: READY");
+        LOG_PRINT(LOG_TYPE_INFO, "BQ startup state: READY");
         return;
     }
 
     volt_status = FAILED;
     s_bq_state = BQ_STATE_FAILED;
-    LOG_WARN("BQ startup state: FAILED; CAN fault/status reporting stays active.");
+    LOG_PRINT(LOG_TYPE_WARN, "BQ startup state: FAILED; CAN fault/status reporting stays active.");
 }
 
 BQ_State_t Volt_GetState(void)
@@ -50,6 +50,6 @@ void Volt_ServiceTask(void)
     if (!bq79616_service_task()) {
         volt_status = FAILED;
         s_bq_state = BQ_STATE_FAILED;
-        LOG_ERROR("BQ runtime state transitioned to FAILED; CAN remains on schedule.");
+        LOG_PRINT(LOG_TYPE_ERROR, "BQ runtime state transitioned to FAILED; CAN remains on schedule.");
     }
 }

@@ -125,11 +125,11 @@ void Therm_LogCachedSnapshot(void)
     const uint8_t count = g_can_ctx.thermistors.num_active;
 
     if (count == 0U) {
-        LOG_INFO("Thermistor Cache: no active thermistors");
+        LOG_PRINT(LOG_TYPE_INFO, "Thermistor Cache: no active thermistors");
         return;
     }
 
-    LOG_INFO("Thermistor Cache:");
+    LOG_PRINT(LOG_TYPE_INFO, "Thermistor Cache:");
     for (uint8_t i = 0U; i < count && i < THERM_APP_CHANNEL_COUNT; ++i) {
         const uint16_t sample = g_can_ctx.thermistors.thermistor_adc_values[i];
         const uint32_t millivolts =
@@ -138,7 +138,7 @@ void Therm_LogCachedSnapshot(void)
         const uint32_t volts_frac  = millivolts % 1000U;
         const int temp_c = (int)Thermistor_ADCToTemp(sample);
 
-        LOG_INFO("  %s%-2lu%s %-6s (Pin %-2s) ch%-3lu %5u -> %s%lu.%03lu V%s %dC",
+        LOG_PRINT(LOG_TYPE_INFO, "  %s%-2lu%s %-6s (Pin %-2s) ch%-3lu %5u -> %s%lu.%03lu V%s %dC",
              LOG_COLOR_FIELD,
              (unsigned long)(i + 1U),
              LOG_COLOR_RESET,
@@ -153,7 +153,7 @@ void Therm_LogCachedSnapshot(void)
              temp_c);
     }
 
-    LOG_INFO("\n");
+    LOG_PRINT(LOG_TYPE_INFO, "\n");
 }
 
 /* Execute the thermistor periodic task that toggles LEDs and logs samples */

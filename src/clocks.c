@@ -30,13 +30,13 @@ void clocks_configure_all(void)
 {
     HAL_StatusTypeDef st = adc_clk_cfg();
     if (st != HAL_OK) {
-        LOG_ERROR("ADC clock config failed");
+        LOG_PRINT(LOG_TYPE_ERROR, "ADC clock config failed");
         Error_Handler();
     }
     
     st = can_clk_cfg();
     if (st != HAL_OK) {
-        LOG_ERROR("FDCAN clock config failed");
+        LOG_PRINT(LOG_TYPE_ERROR, "FDCAN clock config failed");
         Error_Handler();
     }
 }

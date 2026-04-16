@@ -16,16 +16,18 @@ UART_HandleTypeDef uart_bq79616;
 /* Cached UART pointer used by the lightweight logging layer. */
 static UART_HandleTypeDef *log_uart = NULL;
 
-/* Log level tags printed ahead of each line. */
-static const char *const level_tags[LOG_LEVEL_COUNT] = {
+/* Log type tags printed ahead of each line. */
+static const char *const type_tags[LOG_TYPE_COUNT] = {
+    "",
     "[INFO]",
     "[WARN]",
     "[ERROR]",
     "[DEBUG]"
 };
 
-/* ANSI color codes that correspond to each log level tag. */
-static const char *const level_colors[LOG_LEVEL_COUNT] = {
+/* ANSI color codes that correspond to each log type tag. */
+static const char *const type_colors[LOG_TYPE_COUNT] = {
+    WHITE,
     LOG_COLOR_INFO,
     LOG_COLOR_WARN,
     LOG_COLOR_ERROR,
@@ -80,24 +82,20 @@ void Log_Init(UART_HandleTypeDef *huart)
     log_uart = huart;
 }
 
-/* Emit a formatted, colorized log line over UART */
-void Log_Printf(log_level_t level, const char *fmt, ...)
+static void Log_VPrint(log_type_t type, const char *fmt, va_list ap)
 {
     /* Check if logging subsystem is active */
     if (log_status == FAILED) {
         return;
     }
 
-    if (!log_uart || level >= LOG_LEVEL_COUNT || fmt == NULL) {
+    if (!log_uart || type >= LOG_TYPE_COUNT || fmt == NULL) {
         return;
     }
 
     /* Render the formatted message into a local buffer. */
     char line[256];
-    va_list ap;
-    va_start(ap, fmt);
     int len = vsnprintf(line, sizeof(line), fmt, ap);
-    va_end(ap);
     if (len < 0) {
         return;
     }
@@ -105,17 +103,40 @@ void Log_Printf(log_level_t level, const char *fmt, ...)
         len = (int)sizeof(line) - 1;
     }
 
-    /* Prefix with level tag + color for clarity on the console. */
-    const char *color = level_colors[level];
-    const char *tag = level_tags[level];
+    /* Prefix with type tag + color for clarity on the console. */
+    const char *type_color = type_colors[type];
+    const char *tag = type_tags[type];
 
-    /* Emit ANSI color, tag, payload, then reset color. */
-    HAL_UART_Transmit(log_uart, (uint8_t *)color, (uint16_t)strlen(color), HAL_MAX_DELAY);
-    HAL_UART_Transmit(log_uart, (uint8_t *)tag, (uint16_t)strlen(tag), HAL_MAX_DELAY);
-    HAL_UART_Transmit(log_uart, (uint8_t *)" ", 1, HAL_MAX_DELAY);
+    /* Emit optional type tag with type color. */
+    if (type != LOG_TYPE_NONE) {
+        HAL_UART_Transmit(log_uart, (uint8_t *)type_color, (uint16_t)strlen(type_color), HAL_MAX_DELAY);
+        HAL_UART_Transmit(log_uart, (uint8_t *)tag, (uint16_t)strlen(tag), HAL_MAX_DELAY);
+        HAL_UART_Transmit(log_uart, (uint8_t *)" ", 1, HAL_MAX_DELAY);
+    }
+
+    /* Default message text to white unless overridden by inline ANSI tokens. */
+    HAL_UART_Transmit(log_uart, (uint8_t *)WHITE, (uint16_t)strlen(WHITE), HAL_MAX_DELAY);
     HAL_UART_Transmit(log_uart, (uint8_t *)line, (uint16_t)len, HAL_MAX_DELAY);
-    HAL_UART_Transmit(log_uart, (uint8_t *)LOG_COLOR_RESET, (uint16_t)strlen(LOG_COLOR_RESET), HAL_MAX_DELAY);
+    HAL_UART_Transmit(log_uart, (uint8_t *)RESET, (uint16_t)strlen(RESET), HAL_MAX_DELAY);
     /* Always end log entries with CRLF for terminal line discipline. */
     const uint8_t newline[2] = {'\r', '\n'};
     HAL_UART_Transmit(log_uart, newline, 2, HAL_MAX_DELAY);
+}
+
+/* Emit a formatted, colorized log line over UART */
+void Log_Print(log_type_t type, const char *fmt, ...)
+{
+    va_list ap;
+    va_start(ap, fmt);
+    Log_VPrint(type, fmt, ap);
+    va_end(ap);
+}
+
+/* Backward-compatible wrapper */
+void Log_Printf(log_level_t level, const char *fmt, ...)
+{
+    va_list ap;
+    va_start(ap, fmt);
+    Log_VPrint((log_type_t)level, fmt, ap);
+    va_end(ap);
 }
