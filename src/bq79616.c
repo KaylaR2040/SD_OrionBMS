@@ -40,6 +40,13 @@ static uint8_t rx_buf[BQ_RX_MAX];
 #define BQ_SERVICE_TIMEOUT_MS    10u
 #define BQ_FAULT_SNAPSHOT_LOG_MS 2000u
 
+/* ACTIVE_CELL.NUM_CELL encoding per TI datasheet:
+ * 0x0 = 6S ... 0xA = 16S.
+ * Project uses MAX_VOLTAGE channels, so configure the exact active-cell count.
+ */
+#define BQ_NUM_CELLS_CONFIGURED  ((MAX_VOLTAGE < 6u) ? 6u : ((MAX_VOLTAGE > 16u) ? 16u : MAX_VOLTAGE))
+#define BQ_ACTIVE_CELL_NUM_VALUE ((uint8_t)(BQ_NUM_CELLS_CONFIGURED - 6u))
+
 // Function Declarations
 void bq_pin_tx_to_gpio(void);
 void bq_pin_tx_to_uart(void);
@@ -1110,9 +1117,9 @@ int bq79616_auto_address_single(void)
 
 int bq79616_config_main_adc(void)
 {
-    /* Mirror TI sample defaults: all cells active, LPF 26 Hz, continuous + MAIN_GO */
+    /* Configure exact active-cell count, LPF 26 Hz, continuous + MAIN_GO. */
     int status;
-    status = WriteReg(DEVICE_ADDR, ACTIVE_CELL, 0x0Au, 1u, FRMWRT_SGL_W);
+    status = WriteReg(DEVICE_ADDR, ACTIVE_CELL, BQ_ACTIVE_CELL_NUM_VALUE, 1u, FRMWRT_SGL_W);
     if (status != 0) return status;
 
     status = WriteReg(DEVICE_ADDR, ADC_CONF1, 0x02u, 1u, FRMWRT_SGL_W);
@@ -1202,6 +1209,15 @@ static int bq79616_read_all_cells_with_timeout_(uint16_t *out_mv, size_t cell_co
         size_t cell = 16u - i;           /* cell number (16..1) */
         size_t idx_out = cell - 1u;      /* zero-based */
         parsed_mv[idx_out] = (uint16_t)mv;
+
+        /* Add calibration offset for cells 1 and 14 */
+        if (idx_out == 0u) {  
+            parsed_mv[idx_out] = (uint16_t)(mv + 1000u);
+        } else if (idx_out == 13u){
+            parsed_mv[idx_out] = (uint16_t)(mv + 1300u);
+        } else{
+            parsed_mv[idx_out] = (uint16_t)mv;
+        }
     }
 
     for (size_t i = 0; i < cell_count; i++) {
