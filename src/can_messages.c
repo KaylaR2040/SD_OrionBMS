@@ -149,7 +149,7 @@ static void CAN_LogTxFailure_(const char *frame_name, uint32_t can_id, int resul
         return;
     }
 
-    LOG_PRINT(LOG_TYPE_WARN, "TX 0x%08lX %s failed result=%d",
+    LOG_PRINT(LOG_TYPE_WARN, "\x1b[36mTX 0x%08lX %s failed result=%d",
              (unsigned long)can_id,
              frame_name,
              result);
@@ -181,7 +181,7 @@ static void CAN_LogExternalVoltageTx_(uint32_t ext_id,
         s_last_segment_ms[segment_index] = now_ms;
     }
 
-    LOG_PRINT(LOG_TYPE_DEBUG, "TX 0x%08lX extv seg=%u dt_any=%lums dt_seg=%lums [%02X %02X %02X %02X %02X %02X %02X %02X]",
+    LOG_PRINT(LOG_TYPE_DEBUG, MAGENTA, "TX 0x%08lX extv seg=%u dt_any=%lums dt_seg=%lums [%02X %02X %02X %02X %02X %02X %02X %02X]",
               (unsigned long)ext_id,
               segment_index,
               (unsigned long)dt_any_ms,

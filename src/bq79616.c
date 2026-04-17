@@ -789,10 +789,10 @@ bool bq79616_service_task(void) // Uses BQ79616 Chip to externally read Voltages
         if (!has_last_cell_snapshot) {
             LOG_PRINT(LOG_TYPE_WARN, "BQ cell cache unavailable yet");
         } else {
-            LOG_PRINT(LOG_TYPE_INFO, "BQ Cell Cache:");
+            LOG_PRINT(LOG_TYPE_INFO, GREEN, "BQ Cell Cache:");
             for (uint8_t i = 0u; i < MAX_VOLTAGE; i++) {
                 const uint16_t mv = last_cell_mv[i];
-                LOG_PRINT(LOG_TYPE_INFO, "  %2u  VC%02u  %4u -> %u.%03u V",
+                LOG_PRINT(LOG_TYPE_INFO, GREEN, "  %2u  VC%02u  %4u -> %u.%03u V",
                          (unsigned)(i + 1u),
                          (unsigned)(i + 1u),
                          (unsigned)mv,

@@ -314,7 +314,7 @@ void CAN_Debug_TryLogClaim(void)
     }
 
     const uint32_t claim_id = 0x18EEFF00u | (uint32_t)s_dbg.source_addr;
-    LOG_PRINT(LOG_TYPE_DEBUG, "TX 0x%08lX dt=%lums module=%u target=0x%02X [%02X %02X %02X %02X %02X %02X %02X %02X]",
+    LOG_PRINT(LOG_TYPE_DEBUG, "\x1b[36mTX 0x%08lX dt=%lums module=%u target=0x%02X [%02X %02X %02X %02X %02X %02X %02X %02X]\x1b[0m",
               (unsigned long)claim_id,
               (unsigned long)s_dbg.last_claim_interval_ms,
               s_dbg.module_index,
@@ -340,7 +340,7 @@ void CAN_Debug_TryLogBms(void)
     }
 
     const uint32_t bms_id = 0x18390000u | ((uint32_t)s_dbg.bms_target_addr << 8) | (uint32_t)s_dbg.source_addr;
-    LOG_PRINT(LOG_TYPE_DEBUG, "TX 0x%08lX bms dt=%lums module=%u low=%d high=%d avg=%d en=%u valid=%u fault=%u hi_id=%u lo_id=%u csum=0x%02X [%02X %02X %02X %02X %02X %02X %02X %02X]",
+    LOG_PRINT(LOG_TYPE_DEBUG, "\x1b[36mTX 0x%08lX bms dt=%lums module=%u low=%d high=%d avg=%d en=%u valid=%u fault=%u hi_id=%u lo_id=%u csum=0x%02X [%02X %02X %02X %02X %02X %02X %02X %02X]\x1b[0m",
               (unsigned long)bms_id,
               (unsigned long)s_dbg.last_bms_interval_ms,
               s_dbg.module_index,
@@ -378,7 +378,7 @@ void CAN_Debug_TryLogGeneral(void)
     const unsigned fault = (unsigned)((fault_mask & (uint16_t)(1u << idx)) != 0u);
 
     const uint32_t general_id = 0x18380000u | ((uint32_t)s_dbg.bms_target_addr << 8) | (uint32_t)s_dbg.source_addr;
-    LOG_PRINT(LOG_TYPE_DEBUG, "TX 0x%08lX gen dt=%lums global_id=%u local_id=%u fault=%u temp=%d low=%d high=%d hi_id=%u lo_id=%u [%02X %02X %02X %02X %02X %02X %02X %02X]",
+    LOG_PRINT(LOG_TYPE_DEBUG, "\x1b[36mTX 0x%08lX gen dt=%lums global_id=%u local_id=%u fault=%u temp=%d low=%d high=%d hi_id=%u lo_id=%u [%02X %02X %02X %02X %02X %02X %02X %02X]\x1b[0m",
               (unsigned long)general_id,
               (unsigned long)s_dbg.last_general_interval_ms,
               (unsigned)s_dbg.last_general_global_id,

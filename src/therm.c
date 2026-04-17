@@ -125,11 +125,11 @@ void Therm_LogCachedSnapshot(void)
     const uint8_t count = g_can_ctx.thermistors.num_active;
 
     if (count == 0U) {
-        LOG_PRINT(LOG_TYPE_INFO, "Thermistor Cache: no active thermistors");
+        LOG_PRINT(LOG_TYPE_INFO, GREEN, "Thermistor Cache: no active thermistors");
         return;
     }
 
-    LOG_PRINT(LOG_TYPE_INFO, "Thermistor Cache:");
+    LOG_PRINT(LOG_TYPE_INFO, GREEN, "Thermistor Cache:");
     for (uint8_t i = 0U; i < count && i < THERM_APP_CHANNEL_COUNT; ++i) {
         const uint16_t sample = g_can_ctx.thermistors.thermistor_adc_values[i];
         const uint32_t millivolts =
@@ -138,22 +138,16 @@ void Therm_LogCachedSnapshot(void)
         const uint32_t volts_frac  = millivolts % 1000U;
         const int temp_c = (int)Thermistor_ADCToTemp(sample);
 
-        LOG_PRINT(LOG_TYPE_INFO, "  %s%-2lu%s %-6s (Pin %-2s) ch%-3lu %5u -> %s%lu.%03lu V%s %dC",
-             LOG_COLOR_FIELD,
-             (unsigned long)(i + 1U),
-             LOG_COLOR_RESET,
-             therm_channel_pins[i].software_pin,
-             therm_channel_pins[i].physical_pin,
-             (unsigned long)therm_channel_pins[i].adc_channel,
-             (unsigned)sample,
-             LOG_COLOR_VALUE,
-             (unsigned long)volts_whole,
-             (unsigned long)volts_frac,
-             LOG_COLOR_RESET,
-             temp_c);
+        LOG_PRINT(LOG_TYPE_INFO, GREEN, "%-2lu %-6s (Pin %-2s) %5u -> " MAGENTA "%lu.%03lu V" GREEN " -> " ORANGE "%dC" GREEN,
+                  (unsigned long)(i + 1U),
+                  therm_channel_pins[i].software_pin,
+                  therm_channel_pins[i].physical_pin,
+                  (unsigned)sample,
+                  (unsigned long)volts_whole,
+                  (unsigned long)volts_frac,
+                  temp_c);
     }
-
-    LOG_PRINT(LOG_TYPE_INFO, "\n");
+    LOG_PRINT(LOG_TYPE_INFO, GREEN, "\n");
 }
 
 /* Execute the thermistor periodic task that toggles LEDs and logs samples */

@@ -49,6 +49,7 @@ void System_AppInit(void)
         can_status == ACTIVE ? "ACTIVE" : "FAILED",
         volt_status == ACTIVE ? "ACTIVE" : "FAILED",
         therm_status == ACTIVE ? "ACTIVE" : "FAILED"
+        "\n"
     );
 }
 

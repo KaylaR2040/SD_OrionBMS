@@ -27,7 +27,7 @@ static const char *const type_tags[LOG_TYPE_COUNT] = {
 
 /* ANSI color codes that correspond to each log type tag. */
 static const char *const type_colors[LOG_TYPE_COUNT] = {
-    WHITE,
+    GREEN,
     LOG_COLOR_INFO,
     LOG_COLOR_WARN,
     LOG_COLOR_ERROR,
@@ -82,7 +82,34 @@ void Log_Init(UART_HandleTypeDef *huart)
     log_uart = huart;
 }
 
-static void Log_VPrint(log_type_t type, const char *fmt, va_list ap)
+static bool Log_IsAnsiColorToken_(const char *token)
+{
+    if (token == NULL) {
+        return false;
+    }
+
+    return (strcmp(token, RESET) == 0) ||
+           (strcmp(token, BLACK) == 0) ||
+           (strcmp(token, RED) == 0) ||
+           (strcmp(token, ORANGE) == 0) ||
+           (strcmp(token, GREEN) == 0) ||
+           (strcmp(token, YELLOW) == 0) ||
+           (strcmp(token, BLUE) == 0) ||
+           (strcmp(token, MAGENTA) == 0) ||
+           (strcmp(token, CYAN) == 0) ||
+           (strcmp(token, WHITE) == 0) ||
+           (strcmp(token, BRIGHT_BLACK) == 0) ||
+           (strcmp(token, BRIGHT_RED) == 0) ||
+           (strcmp(token, BRIGHT_ORANGE) == 0) ||
+           (strcmp(token, BRIGHT_GREEN) == 0) ||
+           (strcmp(token, BRIGHT_YELLOW) == 0) ||
+           (strcmp(token, BRIGHT_BLUE) == 0) ||
+           (strcmp(token, BRIGHT_MAGENTA) == 0) ||
+           (strcmp(token, BRIGHT_CYAN) == 0) ||
+           (strcmp(token, BRIGHT_WHITE) == 0);
+}
+
+static void Log_VPrint(log_type_t type, const char *fmt, va_list ap, bool parse_color_prefix)
 {
     /* Check if logging subsystem is active */
     if (log_status == FAILED) {
@@ -93,9 +120,24 @@ static void Log_VPrint(log_type_t type, const char *fmt, va_list ap)
         return;
     }
 
+    const char *message_prefix = NULL;
+    const char *format = fmt;
+    va_list format_args;
+    va_copy(format_args, ap);
+
+    /* Support LOG_PRINT(type, COLOR, "fmt", ...) for explicit message color. */
+    if (parse_color_prefix && Log_IsAnsiColorToken_(fmt)) {
+        const char *candidate_fmt = va_arg(format_args, const char *);
+        if (candidate_fmt != NULL) {
+            message_prefix = fmt;
+            format = candidate_fmt;
+        }
+    }
+
     /* Render the formatted message into a local buffer. */
     char line[256];
-    int len = vsnprintf(line, sizeof(line), fmt, ap);
+    int len = vsnprintf(line, sizeof(line), format, format_args);
+    va_end(format_args);
     if (len < 0) {
         return;
     }
@@ -112,10 +154,12 @@ static void Log_VPrint(log_type_t type, const char *fmt, va_list ap)
         HAL_UART_Transmit(log_uart, (uint8_t *)type_color, (uint16_t)strlen(type_color), HAL_MAX_DELAY);
         HAL_UART_Transmit(log_uart, (uint8_t *)tag, (uint16_t)strlen(tag), HAL_MAX_DELAY);
         HAL_UART_Transmit(log_uart, (uint8_t *)" ", 1, HAL_MAX_DELAY);
+        HAL_UART_Transmit(log_uart, (uint8_t *)RESET, (uint16_t)strlen(RESET), HAL_MAX_DELAY);
     }
 
-    /* Default message text to white unless overridden by inline ANSI tokens. */
-    HAL_UART_Transmit(log_uart, (uint8_t *)WHITE, (uint16_t)strlen(WHITE), HAL_MAX_DELAY);
+    /* Explicit prefix wins; otherwise use type color (no forced white). */
+    const char *message_color = (message_prefix != NULL) ? message_prefix : type_color;
+    HAL_UART_Transmit(log_uart, (uint8_t *)message_color, (uint16_t)strlen(message_color), HAL_MAX_DELAY);
     HAL_UART_Transmit(log_uart, (uint8_t *)line, (uint16_t)len, HAL_MAX_DELAY);
     HAL_UART_Transmit(log_uart, (uint8_t *)RESET, (uint16_t)strlen(RESET), HAL_MAX_DELAY);
     /* Always end log entries with CRLF for terminal line discipline. */
@@ -128,7 +172,7 @@ void Log_Print(log_type_t type, const char *fmt, ...)
 {
     va_list ap;
     va_start(ap, fmt);
-    Log_VPrint(type, fmt, ap);
+    Log_VPrint(type, fmt, ap, true);
     va_end(ap);
 }
 
@@ -137,6 +181,6 @@ void Log_Printf(log_level_t level, const char *fmt, ...)
 {
     va_list ap;
     va_start(ap, fmt);
-    Log_VPrint((log_type_t)level, fmt, ap);
+    Log_VPrint((log_type_t)level, fmt, ap, false);
     va_end(ap);
 }

@@ -52,4 +52,6 @@ void Volt_ServiceTask(void)
         s_bq_state = BQ_STATE_FAILED;
         LOG_PRINT(LOG_TYPE_ERROR, "BQ runtime state transitioned to FAILED; CAN remains on schedule.");
     }
+
+    
 }

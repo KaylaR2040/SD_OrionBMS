@@ -196,6 +196,7 @@ void CAN_ServiceTask(void)
     }
 
     CAN_SendMessages();
+    
 }
 
 
