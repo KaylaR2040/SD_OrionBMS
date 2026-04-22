@@ -538,27 +538,49 @@ void bq79616_wake(void)
     HAL_UART_Init(&uart_bq79616);
 }
 
-/* TI-style shutdown helper */
 void bq79616_shutdown(void)
 {
-    /* Two 2.5 ms low pulses with UART temporarily released */
+    LOG_PRINT(LOG_TYPE_INFO, CYAN, "=== FORCE BQ79616 SHUTDOWN ===");
+
+    /*
+     * Stop UART so the TX pin can be manually driven.
+     * STM32 TX drives BQ RX.
+     */
     HAL_UART_DeInit(&uart_bq79616);
     bq_pin_tx_to_gpio();
 
-    bq_pin_tx_set(GPIO_LOW);
-    delayus(2500);
+    /*
+     * Ensure idle-high before the ping starts.
+     * A ping is high-low-high, and UART idle is high.
+     */
     bq_pin_tx_set(GPIO_HIGH);
-    bq_pin_tx_to_uart();
-    HAL_UART_Init(&uart_bq79616);
+    delayus(100);
 
-    HAL_UART_DeInit(&uart_bq79616);
-    bq_pin_tx_to_gpio();
-
+    /*
+     * SHUTDOWN ping:
+     * Hold BQ RX low for 7 ms to 10 ms.
+     * Use 9 ms nominal.
+     */
     bq_pin_tx_set(GPIO_LOW);
-    delayus(2500);
+    delayus(BQ_SHUTDOWN_PING_LOW_US);
     bq_pin_tx_set(GPIO_HIGH);
-    bq_pin_tx_to_uart();
-    HAL_UART_Init(&uart_bq79616);
+
+    /*
+     * Wait for the BQ to complete ACTIVE -> SHUTDOWN transition.
+     * Datasheet says 20 ms. Use 25 ms margin.
+     */
+    delayms(BQ_SHUTDOWN_ENTRY_MS);
+
+    /*
+     * Leave transport disabled after shutdown, but keep the line high.
+     * Do not leave BQ RX low, because that could look like another ping
+     * or hold the interface in a bad state.
+     */
+    bq_pin_tx_set(GPIO_HIGH);
+
+    LOG_PRINT(LOG_TYPE_INFO, CYAN, "=== BQ79616 SHUTDOWN COMPLETE ===");
+
+    Volt_ForceDisable();
 }
 
 /* Read cell voltage from ADC (keeps device ACTIVE via periodic communication) */

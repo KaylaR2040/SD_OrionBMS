@@ -13,6 +13,13 @@
 
 static volatile BQ_State_t s_bq_state = BQ_STATE_STARTUP_PENDING;
 
+void Volt_ForceDisable(void)
+{
+    bq_shutdown_status = BQ_TURN_OFF;
+    volt_status = FAILED;
+    s_bq_state = BQ_STATE_FAILED;
+}
+
 void Volt_RunBlockingStartup(void)
 {
     s_bq_state = BQ_STATE_STARTUP_PENDING;
@@ -60,6 +67,12 @@ bool Volt_IsFaultReportingMode(void)
 
 /* Service task wrapper for voltage subsystem */
 void Volt_ServiceTask(void) {
+    if (bq_shutdown_status == BQ_TURN_OFF) {
+        Volt_ForceDisable();
+        LED_On(VOLT_LED);  /* Keep fault indication active while BQ is disabled */
+        return;
+    }
+
     if (volt_status == ACTIVE && s_bq_state == BQ_STATE_READY) {
         if (!bq79616_service_task()) {
             volt_status = FAILED;
@@ -71,6 +84,5 @@ void Volt_ServiceTask(void) {
         return;
     }
 }
-
 
 

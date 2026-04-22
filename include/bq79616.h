@@ -35,6 +35,9 @@
 #define BQ_TURN_OFF 0
 #define BQ_TURN_ON  1
 
+#define BQ_SHUTDOWN_PING_LOW_US   9000U   /* Datasheet tHLD_SD: 7 ms to 10 ms */
+#define BQ_SHUTDOWN_ENTRY_MS      25U     /* Datasheet tSHUTDN: 20 ms, use margin */
+
 #define BQ_CONTROL1_SEND_WAKE_MASK    (1u << 5)   /* CONTROL1[SEND_WAKE] */
 
 /* ------------------------- Datasheet-driven constants ---------------------- */
@@ -73,6 +76,7 @@ int bq79616_read_all_cells(uint16_t *out_mv, size_t cell_count);
 int bq79616_log_fault_registers(void);
 int bq79616_update_cust_crc(void);
 void bq79616_wake(void);
+void bq79616_shutdown(void);
 void delayus(uint16_t us);
 void delayms(uint16_t ms);
 

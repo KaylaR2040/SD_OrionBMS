@@ -35,6 +35,8 @@ int main(void)
     System_AppInit();
     LED_All_Pulse(1000u);
 
+    // bq79616_shutdown();
+
     while (true) {
 
         /* Thermistor pipeline has priority and must always run. */

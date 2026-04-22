@@ -27,6 +27,7 @@ typedef enum {
 void Volt_RunBlockingStartup(void);
 BQ_State_t Volt_GetState(void);
 bool Volt_IsFaultReportingMode(void);
+void Volt_ForceDisable(void);
 
 extern volatile bool bq_shutdown_status;
 
