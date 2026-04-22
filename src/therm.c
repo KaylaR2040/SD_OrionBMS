@@ -138,7 +138,7 @@ void Therm_LogCachedSnapshot(void)
         const uint32_t volts_frac  = millivolts % 1000U;
         const int temp_c = (int)Thermistor_ADCToTemp(sample);
 
-        LOG_PRINT(LOG_TYPE_INFO, GREEN, "%-2lu %-6s (Pin %-2s) %5u -> " MAGENTA "%lu.%03lu V" GREEN " -> " ORANGE "%dC" GREEN,
+        LOG_PRINT(LOG_TYPE_INFO, GREEN, CYAN "%-2lu" GREEN " %-6s (Pin %-2s) %5u -> " MAGENTA "%lu.%03lu V" GREEN " -> " ORANGE "%dC" GREEN,
                   (unsigned long)(i + 1U),
                   therm_channel_pins[i].software_pin,
                   therm_channel_pins[i].physical_pin,

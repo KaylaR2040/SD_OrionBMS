@@ -19,7 +19,7 @@ void Volt_RunBlockingStartup(void)
 
     if(bq_shutdown_status == BQ_TURN_OFF) {
         // bq79616_shutdown();
-        LOG_PRINT(LOG_TYPE_INFO, "BQ DISABLED: bq_shutdown_status == TURN_OFF");
+        LOG_PRINT(LOG_TYPE_INFO, CYAN, "BQ DISABLED: bq_shutdown_status == TURN_OFF");
         volt_status = FAILED;
         s_bq_state = BQ_STATE_FAILED;
         return;
@@ -27,12 +27,12 @@ void Volt_RunBlockingStartup(void)
         if (bq79616_try_init()) {
             volt_status = ACTIVE;
             s_bq_state = BQ_STATE_READY;
-            LOG_PRINT(LOG_TYPE_INFO, "BQ startup state: READY");
+            LOG_PRINT(LOG_TYPE_INFO, CYAN, "BQ startup state: READY");
             return;
         }else{
             volt_status = FAILED;
             s_bq_state = BQ_STATE_FAILED;
-            LOG_PRINT(LOG_TYPE_WARN, "BQ startup state: FAILED; CAN fault/status reporting stays active.");
+            LOG_PRINT(LOG_TYPE_WARN, CYAN, "BQ startup state: FAILED; CAN fault/status reporting stays active.");
         }
     }
 
@@ -71,7 +71,6 @@ void Volt_ServiceTask(void) {
         return;
     }
 }
-
 
 
 
