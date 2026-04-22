@@ -31,10 +31,8 @@ void System_AppInit(void)
 
     /* Blocking BQ bring-up owns startup. CAN scheduling is released only after
      * BQ reaches a terminal READY or FAILED state. */
-    // Set bq_shutdown_status = BQ_TURN_OFF to prevent BQ79616 initialization
     Volt_RunBlockingStartup();
 
-    
     if (Volt_GetState() == BQ_STATE_READY) {
         CAN_SetSchedulingEnabled(true, false);
     } else if (Volt_GetState() == BQ_STATE_FAILED) {
@@ -42,17 +40,11 @@ void System_AppInit(void)
     }
 
     // Log that all Init Complete and Print Subsystem Statuses
-    LOG_PRINT(LOG_TYPE_INFO,MAGENTA,
-        "System initialization complete. Entering main loop.\n"
-        "Subsystem statuses:\n"
-        " - CAN: %s\n"
-        " - BQ: %s\n"
-        " - Thermistors: %s\n",
-        can_status == ACTIVE ? "ACTIVE" : "FAILED",
-        volt_status == ACTIVE ? "ACTIVE" : "FAILED",
-        therm_status == ACTIVE ? "ACTIVE" : "FAILED"
-        "\n"
-    );
+    LOG_PRINT(LOG_TYPE_INFO, MAGENTA,"System initialization complete. Entering main loop.");
+    LOG_PRINT(LOG_TYPE_INFO, MAGENTA, "Subsystem statuses:");
+    LOG_PRINT(LOG_TYPE_INFO, MAGENTA, " - CAN: %s", can_status == ACTIVE ? "ACTIVE" : "FAILED");
+    LOG_PRINT(LOG_TYPE_INFO, MAGENTA, " - BQ: %s", volt_status == ACTIVE ? "ACTIVE" : "FAILED");
+    LOG_PRINT(LOG_TYPE_INFO, MAGENTA, " - Thermistors: %s", therm_status == ACTIVE ? "ACTIVE" : "FAILED");
 }
 
 /* Configure PLL and bus clocks for the STM32G4 */
