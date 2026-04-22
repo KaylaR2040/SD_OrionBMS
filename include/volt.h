@@ -28,6 +28,8 @@ void Volt_RunBlockingStartup(void);
 BQ_State_t Volt_GetState(void);
 bool Volt_IsFaultReportingMode(void);
 
+extern volatile bool bq_shutdown_status;
+
 /* Service task for BQ79616 voltage measurements and monitoring */
 void Volt_ServiceTask(void);
 
