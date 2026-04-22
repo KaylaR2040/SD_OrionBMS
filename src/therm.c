@@ -147,7 +147,6 @@ void Therm_LogCachedSnapshot(void)
                   (unsigned long)volts_frac,
                   temp_c);
     }
-    LOG_PRINT(LOG_TYPE_INFO, GREEN, "\n");
 }
 
 /* Execute the thermistor periodic task that toggles LEDs and logs samples */

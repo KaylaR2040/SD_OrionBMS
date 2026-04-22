@@ -538,6 +538,29 @@ void bq79616_wake(void)
     HAL_UART_Init(&uart_bq79616);
 }
 
+/* TI-style shutdown helper */
+void bq79616_shutdown(void)
+{
+    /* Two 2.5 ms low pulses with UART temporarily released */
+    HAL_UART_DeInit(&uart_bq79616);
+    bq_pin_tx_to_gpio();
+
+    bq_pin_tx_set(GPIO_LOW);
+    delayus(2500);
+    bq_pin_tx_set(GPIO_HIGH);
+    bq_pin_tx_to_uart();
+    HAL_UART_Init(&uart_bq79616);
+
+    HAL_UART_DeInit(&uart_bq79616);
+    bq_pin_tx_to_gpio();
+
+    bq_pin_tx_set(GPIO_LOW);
+    delayus(2500);
+    bq_pin_tx_set(GPIO_HIGH);
+    bq_pin_tx_to_uart();
+    HAL_UART_Init(&uart_bq79616);
+}
+
 /* Read cell voltage from ADC (keeps device ACTIVE via periodic communication) */
 int bq79616_read_cell_voltage(uint8_t dev_addr, uint8_t cell_channel, uint16_t *voltage_mv)
 {

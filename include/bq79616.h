@@ -32,6 +32,12 @@
 #define GPIO_LOW GPIO_PIN_RESET
 #define GPIO_HIGH GPIO_PIN_SET
 
+#define BQ_TURN_OFF 0
+#define BQ_TURN_ON  1
+
+#define BQ79616_CONTROL1_AUTO_ADDR      (1u << 0)
+#define BQ79616_CONTROL1_DIR_SEL        (1u << 1)
+#define BQ79616_CONTROL1_GOTO_SHUTDOWN  (1u << 3)
 #define BQ_CONTROL1_SEND_WAKE_MASK    (1u << 5)   /* CONTROL1[SEND_WAKE] */
 
 /* ------------------------- Datasheet-driven constants ---------------------- */
@@ -66,6 +72,8 @@ int bq79616_read_partid_once(uint8_t *partid_out);
 int bq79616_auto_address_single(void);
 int bq79616_config_main_adc(void);
 int bq79616_init_device(void);
+int BQ79616_EnterShutdownAll(uint8_t preserve_dir_sel);
+bool bq_shutdown_check(uint8_t bq_shutdown_enable);
 int bq79616_read_all_cells(uint16_t *out_mv, size_t cell_count);
 int bq79616_log_fault_registers(void);
 int bq79616_update_cust_crc(void);

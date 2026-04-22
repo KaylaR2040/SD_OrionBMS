@@ -148,23 +148,49 @@ static void Log_VPrint(log_type_t type, const char *fmt, va_list ap, bool parse_
     /* Prefix with type tag + color for clarity on the console. */
     const char *type_color = type_colors[type];
     const char *tag = type_tags[type];
-
-    /* Emit optional type tag with type color. */
-    if (type != LOG_TYPE_NONE) {
-        HAL_UART_Transmit(log_uart, (uint8_t *)type_color, (uint16_t)strlen(type_color), HAL_MAX_DELAY);
-        HAL_UART_Transmit(log_uart, (uint8_t *)tag, (uint16_t)strlen(tag), HAL_MAX_DELAY);
-        HAL_UART_Transmit(log_uart, (uint8_t *)" ", 1, HAL_MAX_DELAY);
-        HAL_UART_Transmit(log_uart, (uint8_t *)RESET, (uint16_t)strlen(RESET), HAL_MAX_DELAY);
-    }
-
     /* Explicit prefix wins; otherwise use type color (no forced white). */
     const char *message_color = (message_prefix != NULL) ? message_prefix : type_color;
-    HAL_UART_Transmit(log_uart, (uint8_t *)message_color, (uint16_t)strlen(message_color), HAL_MAX_DELAY);
-    HAL_UART_Transmit(log_uart, (uint8_t *)line, (uint16_t)len, HAL_MAX_DELAY);
-    HAL_UART_Transmit(log_uart, (uint8_t *)RESET, (uint16_t)strlen(RESET), HAL_MAX_DELAY);
-    /* Always end log entries with CRLF for terminal line discipline. */
-    const uint8_t newline[2] = {'\r', '\n'};
-    HAL_UART_Transmit(log_uart, newline, 2, HAL_MAX_DELAY);
+
+    /*
+     * Emit one physical line at a time and normalize any embedded '\n' so every
+     * line starts from column 0 on serial consoles with strict line discipline.
+     */
+    size_t start = 0U;
+    for (size_t i = 0U; i <= (size_t)len; ++i) {
+        const bool at_end = (i == (size_t)len);
+        if (!at_end && line[i] != '\n') {
+            continue;
+        }
+
+        size_t part_len = i - start;
+        if (part_len > 0U && line[start + part_len - 1U] == '\r') {
+            part_len--;
+        }
+
+        /* Drop trailing empty segment when format string ends with '\n'. */
+        if (!(at_end && part_len == 0U)) {
+            const uint8_t line_start = '\r';
+            HAL_UART_Transmit(log_uart, (uint8_t *)&line_start, 1, HAL_MAX_DELAY);
+
+            if (type != LOG_TYPE_NONE) {
+                HAL_UART_Transmit(log_uart, (uint8_t *)type_color, (uint16_t)strlen(type_color), HAL_MAX_DELAY);
+                HAL_UART_Transmit(log_uart, (uint8_t *)tag, (uint16_t)strlen(tag), HAL_MAX_DELAY);
+                HAL_UART_Transmit(log_uart, (uint8_t *)" ", 1, HAL_MAX_DELAY);
+                HAL_UART_Transmit(log_uart, (uint8_t *)RESET, (uint16_t)strlen(RESET), HAL_MAX_DELAY);
+            }
+
+            HAL_UART_Transmit(log_uart, (uint8_t *)message_color, (uint16_t)strlen(message_color), HAL_MAX_DELAY);
+            if (part_len > 0U) {
+                HAL_UART_Transmit(log_uart, (uint8_t *)&line[start], (uint16_t)part_len, HAL_MAX_DELAY);
+            }
+            HAL_UART_Transmit(log_uart, (uint8_t *)RESET, (uint16_t)strlen(RESET), HAL_MAX_DELAY);
+
+            const uint8_t line_end[2] = {'\r', '\n'};
+            HAL_UART_Transmit(log_uart, line_end, 2, HAL_MAX_DELAY);
+        }
+
+        start = i + 1U;
+    }
 }
 
 /* Emit a formatted, colorized log line over UART */

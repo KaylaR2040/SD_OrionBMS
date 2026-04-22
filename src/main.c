@@ -12,6 +12,8 @@
 
 #include "master.h"
 
+/* Set to 1 to force BQ into SHUTDOWN from main loop. */
+volatile bool bq_shutdown_status = BQ_TURN_ON;
 
 /* Boolean Flags to Track if each subsystem properly inits and is active
     If flag is ACTIVE, the service task will run
@@ -37,7 +39,10 @@ int main(void)
         /* Thermistor pipeline has priority and must always run. */
         Therm_ServiceTask();
         CAN_ServiceTask();
-        Volt_ServiceTask();
+        
+        if (volt_status == ACTIVE && Volt_GetState() == BQ_STATE_READY) {
+            Volt_ServiceTask();
+        }
         
     }
 }
