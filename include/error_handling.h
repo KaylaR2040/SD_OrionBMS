@@ -18,6 +18,9 @@
 extern "C" {
 #endif
 
+/* --- Fatal handler blink loop timing --- */
+#define ERROR_HANDLER_DELAY_ITERS 500000U
+
 void Error_Handler(void);
 
 

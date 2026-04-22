@@ -12,15 +12,9 @@
 // Init Variables
 FDCAN_HandleTypeDef g_fdcan1;
 FDCAN_TxHeaderTypeDef g_can_tx_header;
-uint8_t g_can_tx_data[8];
+uint8_t g_can_tx_data[CAN_MAX_DLEN_BYTES];
 can_app_ctx_t g_can_ctx;
 static bool s_can_scheduling_enabled = false;
-
-#ifndef DEFAULT_CAN_KBPS
-#define DEFAULT_CAN_KBPS CAN_APP_DEFAULT_KBPS
-#endif
-
-#define CAN_TX_ERROR_LOG_PERIOD_MS 1000U
 
 // OLD Time Query based Implmentation
 // static bool CAN_ShouldLogTxError_(void)
@@ -50,7 +44,7 @@ void CAN_App_Init(uint32_t kbps)
 {
     uint32_t init_kbps = kbps;
     if (init_kbps == 0U) {
-        init_kbps = DEFAULT_CAN_KBPS;
+        init_kbps = CAN_APP_DEFAULT_KBPS;
     }
 
     if (CAN_Comm_Init_kbps(init_kbps) != 0) {
@@ -67,26 +61,26 @@ int CAN_Comm_Init_kbps(uint32_t kbps)
     uint32_t bitrate_hz = kbps * 1000U;
     uint32_t presc = 0U, tseg1 = 0U, tseg2 = 0U, sjw = 0U;
 
-    if (CAN_FindTiming(FDCAN_KERNEL_CLK_HZ, bitrate_hz, &presc, &tseg1, &tseg2, &sjw) != 0) {
-        const uint32_t tq = 10U;
-        uint32_t presc_try = (FDCAN_KERNEL_CLK_HZ + (bitrate_hz * tq)/2U) / (bitrate_hz * tq);
-        if (presc_try < 1U) {
-            presc_try = 1U;
+    if (CAN_FindTiming(CAN_FDCAN_KERNEL_CLK_HZ, bitrate_hz, &presc, &tseg1, &tseg2, &sjw) != 0) {
+        const uint32_t tq = CAN_TIMING_FALLBACK_TQ;
+        uint32_t presc_try = (CAN_FDCAN_KERNEL_CLK_HZ + (bitrate_hz * tq) / 2U) / (bitrate_hz * tq);
+        if (presc_try < CAN_TIMING_PRESC_MIN) {
+            presc_try = CAN_TIMING_PRESC_MIN;
         }
-        if (presc_try > 512U) {
-            presc_try = 512U;
+        if (presc_try > CAN_TIMING_PRESC_MAX) {
+            presc_try = CAN_TIMING_PRESC_MAX;
         }
         presc = presc_try;
         uint32_t tseg_total = tq - 1U;
-        uint32_t tseg2_candidate = tseg_total / 4U;
+        uint32_t tseg2_candidate = tseg_total / CAN_TIMING_TSEG2_DIVISOR;
         if (tseg2_candidate != 0U) {
             tseg2 = tseg2_candidate;
         } else {
-            tseg2 = 1U;
+            tseg2 = CAN_TIMING_TSEG2_MIN;
         }
         tseg1 = tseg_total - tseg2;
-        if (tseg2 >= 4U) {
-            sjw = 4U;
+        if (tseg2 >= CAN_TIMING_SJW_MAX) {
+            sjw = CAN_TIMING_SJW_MAX;
         } else {
             sjw = tseg2;
         }
@@ -111,10 +105,10 @@ int CAN_Comm_Init_kbps(uint32_t kbps)
     g_fdcan1.Init.NominalTimeSeg1 = tseg1;
     g_fdcan1.Init.NominalTimeSeg2 = tseg2;
 
-    g_fdcan1.Init.DataPrescaler = 1;
-    g_fdcan1.Init.DataSyncJumpWidth = 1;
-    g_fdcan1.Init.DataTimeSeg1 = 1;
-    g_fdcan1.Init.DataTimeSeg2 = 1;
+    g_fdcan1.Init.DataPrescaler = CAN_FD_DATA_TIMING_DEFAULT;
+    g_fdcan1.Init.DataSyncJumpWidth = CAN_FD_DATA_TIMING_DEFAULT;
+    g_fdcan1.Init.DataTimeSeg1 = CAN_FD_DATA_TIMING_DEFAULT;
+    g_fdcan1.Init.DataTimeSeg2 = CAN_FD_DATA_TIMING_DEFAULT;
 
     if (HAL_FDCAN_Init(&g_fdcan1) != HAL_OK) {
         return -1;
@@ -122,22 +116,22 @@ int CAN_Comm_Init_kbps(uint32_t kbps)
 
     FDCAN_FilterTypeDef sFilterConfig;
     sFilterConfig.IdType = FDCAN_STANDARD_ID;
-    sFilterConfig.FilterIndex = 0;
+    sFilterConfig.FilterIndex = CAN_FILTER_INDEX_DEFAULT;
     sFilterConfig.FilterType = FDCAN_FILTER_RANGE;
     sFilterConfig.FilterConfig = FDCAN_FILTER_TO_RXFIFO0;
-    sFilterConfig.FilterID1 = 0x000;
-    sFilterConfig.FilterID2 = 0x7FF;
+    sFilterConfig.FilterID1 = CAN_STD_FILTER_ID_MIN;
+    sFilterConfig.FilterID2 = CAN_STD_FILTER_ID_MAX;
     if (HAL_FDCAN_ConfigFilter(&g_fdcan1, &sFilterConfig) != HAL_OK) {
         return -1;
     }
 
     FDCAN_FilterTypeDef xFilterConfig;
     xFilterConfig.IdType = FDCAN_EXTENDED_ID;
-    xFilterConfig.FilterIndex = 0;
+    xFilterConfig.FilterIndex = CAN_FILTER_INDEX_DEFAULT;
     xFilterConfig.FilterType = FDCAN_FILTER_RANGE;
     xFilterConfig.FilterConfig = FDCAN_FILTER_TO_RXFIFO0;
-    xFilterConfig.FilterID1 = 0x00000000;
-    xFilterConfig.FilterID2 = 0x1FFFFFFF;
+    xFilterConfig.FilterID1 = CAN_EXT_FILTER_ID_MIN;
+    xFilterConfig.FilterID2 = CAN_EXT_FILTER_ID_MAX;
     if (HAL_FDCAN_ConfigFilter(&g_fdcan1, &xFilterConfig) != HAL_OK) {
         return -1;
     }
@@ -205,18 +199,13 @@ void CAN_ServiceTask(void)
 /* CAN Communication Helper Functions                           */
 /* -------------------------------------------------------------------------- */
 
-/** Default kernel clock for the FDCAN peripheral. */
-#ifndef FDCAN_KERNEL_CLK_HZ
-#define FDCAN_KERNEL_CLK_HZ 85000000UL
-#endif
-
 /** Attempt to derive timing parameters for the requested bitrate. */
 int CAN_FindTiming(uint32_t fclk_hz, uint32_t bitrate_hz,
                           uint32_t *out_presc, uint32_t *out_tseg1,
                           uint32_t *out_tseg2, uint32_t *out_sjw)
 {
-    for (uint32_t tq = 8U; tq <= 25U; ++tq) {
-        for (uint32_t presc = 1U; presc <= 512U; ++presc) {
+    for (uint32_t tq = CAN_TIMING_TQ_MIN; tq <= CAN_TIMING_TQ_MAX; ++tq) {
+        for (uint32_t presc = CAN_TIMING_PRESC_MIN; presc <= CAN_TIMING_PRESC_MAX; ++presc) {
             uint64_t num = (uint64_t)fclk_hz;
             uint64_t den = (uint64_t)presc * (uint64_t)tq;
             if (den == 0U) {
@@ -230,17 +219,17 @@ int CAN_FindTiming(uint32_t fclk_hz, uint32_t bitrate_hz,
                 continue;
             }
             uint32_t tseg_total = tq - 1U;
-            uint32_t tseg2 = tseg_total / 4U;
-            if (tseg2 < 1U) {
-                tseg2 = 1U;
+            uint32_t tseg2 = tseg_total / CAN_TIMING_TSEG2_DIVISOR;
+            if (tseg2 < CAN_TIMING_TSEG2_MIN) {
+                tseg2 = CAN_TIMING_TSEG2_MIN;
             }
             uint32_t tseg1 = tseg_total - tseg2;
-            if (tseg1 < 1U || tseg1 > 255U) {
+            if (tseg1 < CAN_TIMING_TSEG1_MIN || tseg1 > CAN_TIMING_TSEG1_MAX) {
                 continue;
             }
             uint32_t sjw;
-            if (tseg2 >= 4U) {
-                sjw = 4U;
+            if (tseg2 >= CAN_TIMING_SJW_MAX) {
+                sjw = CAN_TIMING_SJW_MAX;
             } else {
                 sjw = tseg2;
             }
@@ -259,12 +248,12 @@ int CAN_FindTiming(uint32_t fclk_hz, uint32_t bitrate_hz,
 /* Send an extended (29-bit) CAN frame for J1939/BMS messages */
 int CAN_Comm_SendExt(uint32_t ext_id, const uint8_t *data, uint8_t len)
 {
-    if (len > 8U) {
+    if (len > CAN_MAX_DLEN_BYTES) {
         return -1;
     }
 
     FDCAN_TxHeaderTypeDef txHeader;
-    txHeader.Identifier = ext_id & 0x1FFFFFFFU;
+    txHeader.Identifier = ext_id & CAN_EXT_ID_MASK;
     txHeader.IdType = FDCAN_EXTENDED_ID;
     txHeader.TxFrameType = FDCAN_DATA_FRAME;
 
@@ -285,13 +274,13 @@ int CAN_Comm_SendExt(uint32_t ext_id, const uint8_t *data, uint8_t len)
 #elif defined(FDCAN_ERROR_STATE_NORMAL)
     txHeader.ErrorStateIndicator = FDCAN_ERROR_STATE_NORMAL;
 #else
-    txHeader.ErrorStateIndicator = 0;
+    txHeader.ErrorStateIndicator = CAN_TX_MESSAGE_MARKER_DEFAULT;
 #endif
 
     txHeader.BitRateSwitch = FDCAN_BRS_OFF;
     txHeader.FDFormat = FDCAN_CLASSIC_CAN;
     txHeader.TxEventFifoControl = FDCAN_NO_TX_EVENTS;
-    txHeader.MessageMarker = 0;
+    txHeader.MessageMarker = CAN_TX_MESSAGE_MARKER_DEFAULT;
 
 
     if (HAL_FDCAN_AddMessageToTxFifoQ(&g_fdcan1, &txHeader, (uint8_t *)data) != HAL_OK) {

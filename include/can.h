@@ -17,8 +17,35 @@
 // Project headers
 #include "can_messages.h"
 
+/* --- Application defaults and return codes --- */
 #define CAN_APP_DEFAULT_KBPS 1000U
 #define CAN_TX_RESULT_TRANSIENT_DROP (-2)
+
+/* --- Peripheral and frame limits --- */
+#define CAN_FDCAN_KERNEL_CLK_HZ 85000000UL
+#define CAN_MAX_DLEN_BYTES      8U
+#define CAN_EXT_ID_MASK         0x1FFFFFFFU
+
+/* --- Filter ranges --- */
+#define CAN_STD_FILTER_ID_MIN 0x000U
+#define CAN_STD_FILTER_ID_MAX 0x7FFU
+#define CAN_EXT_FILTER_ID_MIN 0x00000000U
+#define CAN_EXT_FILTER_ID_MAX CAN_EXT_ID_MASK
+
+/* --- Timing search constants --- */
+#define CAN_TIMING_TQ_MIN         8U
+#define CAN_TIMING_TQ_MAX         25U
+#define CAN_TIMING_FALLBACK_TQ    10U
+#define CAN_TIMING_PRESC_MIN      1U
+#define CAN_TIMING_PRESC_MAX      512U
+#define CAN_TIMING_TSEG1_MIN      1U
+#define CAN_TIMING_TSEG1_MAX      255U
+#define CAN_TIMING_TSEG2_MIN      1U
+#define CAN_TIMING_SJW_MAX        4U
+#define CAN_TIMING_TSEG2_DIVISOR  4U
+#define CAN_FD_DATA_TIMING_DEFAULT 1U
+#define CAN_FILTER_INDEX_DEFAULT   0U
+#define CAN_TX_MESSAGE_MARKER_DEFAULT 0U
 
 #ifdef __cplusplus
 extern "C" {

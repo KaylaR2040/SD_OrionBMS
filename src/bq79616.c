@@ -28,24 +28,8 @@ typedef enum
     /* 111 reserved */
 } bq_req_type_t;
 
-/* Frame size bounds (kept conservative) */
-#define BQ_TX_MAX   (1u + 1u + 2u + BQ_READ_MAX_BYTES + 2u) /* enough for worst request */
-#define BQ_RX_MAX   (1u + 1u + 2u + BQ_READ_MAX_BYTES + 2u) /* worst response */
-
-
 static uint8_t tx_buf[BQ_TX_MAX];
 static uint8_t rx_buf[BQ_RX_MAX];
-
-#define BQ_FIRST_READ_TIMEOUT_MS 200u
-#define BQ_SERVICE_TIMEOUT_MS    10u
-#define BQ_FAULT_SNAPSHOT_LOG_MS 2000u
-
-/* ACTIVE_CELL.NUM_CELL encoding per TI datasheet:
- * 0x0 = 6S ... 0xA = 16S.
- * Project uses MAX_VOLTAGE channels, so configure the exact active-cell count.
- */
-#define BQ_NUM_CELLS_CONFIGURED  ((MAX_VOLTAGE < 6u) ? 6u : ((MAX_VOLTAGE > 16u) ? 16u : MAX_VOLTAGE))
-#define BQ_ACTIVE_CELL_NUM_VALUE ((uint8_t)(BQ_NUM_CELLS_CONFIGURED - 6u))
 
 // Function Declarations
 void bq_pin_tx_to_gpio(void);
@@ -80,7 +64,7 @@ static const uint16_t crc16_table[256] = {
 
 uint16_t bq79616_crc16(const uint8_t *data, uint16_t len)
 {
-    uint16_t crc = 0xFFFFu;
+    uint16_t crc = BQ_CRC16_INIT_VALUE;
     for (uint16_t i = 0; i < len; i++) {
         uint8_t idx = (uint8_t)(crc ^ data[i]);
         crc = (uint16_t)((crc >> 8) ^ crc16_table[idx]);
@@ -91,7 +75,7 @@ uint16_t bq79616_crc16(const uint8_t *data, uint16_t len)
 /* Validate per datasheet: CRC computed across entire frame including CRC must be 0 */
 int bq_crc_validate_full_frame(const uint8_t *frame, uint16_t frame_len)
 {
-    if (!frame || frame_len < 2u) {
+    if (!frame || frame_len < BQ_FRAME_CRC_MIN_BYTES) {
         return -1;
     }
     if (bq79616_crc16(frame, frame_len) == 0u) {
@@ -121,11 +105,11 @@ int bq_crc_validate_full_frame(const uint8_t *frame, uint16_t frame_len)
  */
 uint8_t bq_init_cmd(bq_req_type_t req, uint8_t data_bytes)
 {
-    if (data_bytes < 1u) data_bytes = 1u;
-    if (data_bytes > 8u) data_bytes = 8u;
+    if (data_bytes < BQ_CMD_DATA_BYTES_MIN) data_bytes = BQ_CMD_DATA_BYTES_MIN;
+    if (data_bytes > BQ_CMD_DATA_BYTES_MAX) data_bytes = BQ_CMD_DATA_BYTES_MAX;
 
-    uint8_t data_size_bits = (uint8_t)((data_bytes - 1u) & 0x07u);
-    return (uint8_t)((BQ_CMD_FRAME_TYPE << 7) | (((uint8_t)req & 0x07u) << 4) | data_size_bits);
+    uint8_t data_size_bits = (uint8_t)((data_bytes - 1u) & BQ_CMD_REQ_TYPE_MASK);
+    return (uint8_t)((BQ_CMD_FRAME_TYPE << 7) | (((uint8_t)req & BQ_CMD_REQ_TYPE_MASK) << 4) | data_size_bits);
 }
 
 /*
@@ -136,8 +120,8 @@ uint8_t bq_init_cmd(bq_req_type_t req, uint8_t data_bytes)
 uint8_t bq_rsp_len_from_init(uint8_t init_byte, uint8_t *out_len)
 {
     if (!out_len) return 1u;
-    if ((init_byte & 0x80u) != 0u) return 2u; /* not a response frame */
-    uint8_t n = (uint8_t)(init_byte & 0x7Fu);
+    if ((init_byte & BQ_INIT_RESPONSE_FLAG_MASK) != 0u) return 2u; /* not a response frame */
+    uint8_t n = (uint8_t)(init_byte & BQ_INIT_RESPONSE_LEN_MASK);
     *out_len = (uint8_t)(n + 1u);
     return 0u;
 }
@@ -181,7 +165,7 @@ int bq_uart_txrx(const uint8_t *tx, uint16_t tx_len, uint8_t *rx, uint16_t rx_le
 /* Public single-device wrappers */
 int bq79616_write(uint8_t dev_id, uint16_t reg_addr, const uint8_t *data, uint8_t len)
 {
-    return bq7961x_single_write(dev_id, reg_addr, data, len, 1000u);
+    return bq7961x_single_write(dev_id, reg_addr, data, len, BQ_FAST_TIMEOUT_MS);
 }
 
 
@@ -284,12 +268,12 @@ void bq_log_hex(const char *label, const uint8_t *buf, size_t len)
         return;
     }
 
-    char line[192];
+    char line[BQ_HEX_LOG_LINE_MAX_CHARS];
     size_t pos = 0u;
     pos += (size_t)snprintf(line + pos, sizeof(line) - pos, "%s (%uB): ", tag, (unsigned)len);
 
     for (size_t i = 0; i < len; i++) {
-        if ((pos + 4u) >= sizeof(line)) {
+        if ((pos + BQ_HEX_LOG_ELLIPSIS_RESERVE) >= sizeof(line)) {
             pos += (size_t)snprintf(line + pos, sizeof(line) - pos, "...");
             break;
         }
@@ -310,16 +294,16 @@ int bq79616_build_single_read_frame(uint16_t reg_addr, uint8_t n_minus_1, uint8_
         return -2;
     }
 
-    out[0] = 0x80u; /* INIT: Single Device Read, DATA_SIZE=1 byte */
+    out[0] = BQ_SINGLE_READ_INIT_VALUE; /* INIT: Single Device Read, DATA_SIZE=1 byte */
     out[1] = (uint8_t)(DEVICE_ADDR & BQ_DEV_ADDR_MAX);
-    out[2] = (uint8_t)((reg_addr >> 8) & 0xFFu);
-    out[3] = (uint8_t)(reg_addr & 0xFFu);
+    out[2] = (uint8_t)((reg_addr >> 8) & BQ_BYTE_MASK);
+    out[3] = (uint8_t)(reg_addr & BQ_BYTE_MASK);
     out[4] = n_minus_1; /* number of bytes to read minus one */
 
     /* CRC-16-IBM across bytes [0..4], appended as [CRC_H][CRC_L] */
     uint16_t crc = bq79616_crc16(out, 5u);
-    out[5] = (uint8_t)((crc >> 8) & 0xFFu);
-    out[6] = (uint8_t)(crc & 0xFFu);
+    out[5] = (uint8_t)((crc >> 8) & BQ_BYTE_MASK);
+    out[6] = (uint8_t)(crc & BQ_BYTE_MASK);
 
     *out_len = BQ_SINGLE_READ_FRAME_LEN;
     return 0;
@@ -355,7 +339,7 @@ int bq_build_cmd_frame(uint8_t *out, uint16_t out_max, bq_req_type_t req, uint8_
         if (dev_addr > BQ_DEV_ADDR_MAX) return -2;
     }
 
-    if (data_len < 1u) return -3;
+    if (data_len < BQ_CMD_DATA_BYTES_MIN) return -3;
 
     /* Command DATA_SIZE is 3 bits => max 8 data bytes in a command frame */
     if (data_len > BQ_WRITE_MAX_BYTES) return -4;
@@ -378,14 +362,14 @@ int bq_build_cmd_frame(uint8_t *out, uint16_t out_max, bq_req_type_t req, uint8_
     }
 
     /* Table 9-12: REG_ADR is 2 bytes (MSB then LSB) */
-    out[idx++] = (uint8_t)((reg_addr >> 8) & 0xFFu);
-    out[idx++] = (uint8_t)(reg_addr & 0xFFu);
+    out[idx++] = (uint8_t)((reg_addr >> 8) & BQ_BYTE_MASK);
+    out[idx++] = (uint8_t)(reg_addr & BQ_BYTE_MASK);
 
     /* Table 9-13: DATA bytes */
     if (data && data_len) {
         memcpy(&out[idx], data, data_len);
     } else {
-        memset(&out[idx], 0x00, data_len);
+        memset(&out[idx], BQ_AUTO_ADDR_DUMMY_WRITE_VALUE, data_len);
     }
     idx = (uint16_t)(idx + data_len);
 
@@ -395,8 +379,8 @@ int bq_build_cmd_frame(uint8_t *out, uint16_t out_max, bq_req_type_t req, uint8_
      * We append CRC LSB then CRC MSB (matches TI ref style / common IBM CRC framing).
      */
     uint16_t crc = bq79616_crc16(out, idx);
-    out[idx++] = (uint8_t)(crc & 0xFFu);         /* CRC_L */
-    out[idx++] = (uint8_t)((crc >> 8) & 0xFFu);  /* CRC_H */
+    out[idx++] = (uint8_t)(crc & BQ_BYTE_MASK);         /* CRC_L */
+    out[idx++] = (uint8_t)((crc >> 8) & BQ_BYTE_MASK);  /* CRC_H */
 
     *out_len = idx;
     return 0;
@@ -405,7 +389,7 @@ int bq_build_cmd_frame(uint8_t *out, uint16_t out_max, bq_req_type_t req, uint8_
 /* ---------------------- Internal send command APIs ------------------------ */
 int bq7961x_single_write(uint8_t dev_addr, uint16_t reg_addr, const uint8_t *data, uint8_t len, uint32_t timeout_ms)
 {
-    if (len < 1u || len > 8u) return -1;
+    if (len < BQ_CMD_DATA_BYTES_MIN || len > BQ_CMD_DATA_BYTES_MAX) return -1;
 
     uint16_t frame_len = 0u;
     int bq_status = bq_build_cmd_frame(tx_buf, sizeof(tx_buf),
@@ -500,7 +484,7 @@ int bq7961x_single_read(uint8_t dev_addr, uint16_t reg_addr, uint8_t *out, uint8
 
 int bq7961x_broadcast_write(uint16_t reg_addr, const uint8_t *data, uint8_t len, uint32_t timeout_ms)
 {
-    if (len < 1u || len > 8u) return -1;
+    if (len < BQ_CMD_DATA_BYTES_MIN || len > BQ_CMD_DATA_BYTES_MAX) return -1;
 
     uint16_t frame_len = 0u;
     int bq_status = bq_build_cmd_frame(tx_buf, sizeof(tx_buf),
@@ -523,7 +507,7 @@ void bq79616_wake(void)
     bq_pin_tx_to_gpio();
 
     bq_pin_tx_set(GPIO_LOW);
-    delayus(2500);
+    delayus(BQ_WAKE_PULSE_US);
     bq_pin_tx_set(GPIO_HIGH);
     bq_pin_tx_to_uart();
     HAL_UART_Init(&uart_bq79616);
@@ -532,7 +516,7 @@ void bq79616_wake(void)
     bq_pin_tx_to_gpio();
 
     bq_pin_tx_set(GPIO_LOW);
-    delayus(2500);
+    delayus(BQ_WAKE_PULSE_US);
     bq_pin_tx_set(GPIO_HIGH);
     bq_pin_tx_to_uart();
     HAL_UART_Init(&uart_bq79616);
@@ -554,7 +538,7 @@ void bq79616_shutdown(void)
      * A ping is high-low-high, and UART idle is high.
      */
     bq_pin_tx_set(GPIO_HIGH);
-    delayus(100);
+    delayus(BQ_SHUTDOWN_IDLE_HIGH_US);
 
     /*
      * SHUTDOWN ping:
@@ -587,14 +571,14 @@ void bq79616_shutdown(void)
 int bq79616_read_cell_voltage(uint8_t dev_addr, uint8_t cell_channel, uint16_t *voltage_mv)
 {
     int bq_status;
-    uint8_t data[2] = {0};
+    uint8_t data[BQ_SINGLE_CELL_READ_BYTES] = {0};
 
     if (!voltage_mv) return -1;
 
     /* Cell voltage registers (2 bytes each):
        VC1=0x0014, VC2=0x0016, VC3=0x0018, VC4=0x001A, etc.
        Each channel offset by 2 bytes */
-    uint16_t reg_addr = 0x0014u + (cell_channel * 2u);
+    uint16_t reg_addr = BQ_CELL_REG_BASE + (cell_channel * BQ_CELL_REG_STRIDE_BYTES);
 
     /* Read 2 bytes from the voltage register */
     bq_status = bq7961x_single_read(dev_addr, reg_addr, data, sizeof(data), BQ_FAST_TIMEOUT_MS);
@@ -606,7 +590,7 @@ int bq79616_read_cell_voltage(uint8_t dev_addr, uint8_t cell_channel, uint16_t *
        BQ79612 ADC resolution: 195.3 µV per LSB
        Formula: (raw_adc * 1953) / 10000 */
     uint16_t raw_adc = (data[0] << 8) | data[1];
-    *voltage_mv = (raw_adc * 1953u) / 10000u;
+    *voltage_mv = (raw_adc * BQ_CELL_MV_NUMERATOR) / BQ_CELL_MV_DENOMINATOR;
 
     return 0;
 }
@@ -698,10 +682,10 @@ bool bq79616_service_task(void) // Uses BQ79616 Chip to externally read Voltages
     static bool has_last_cell_snapshot = false;
     uint32_t now = HAL_GetTick();
     
-    if ((now - last_keep_alive) >= 20u) {  /* Every 20ms: beat comm timeout */
+    if ((now - last_keep_alive) >= BQ_KEEP_ALIVE_INTERVAL_MS) {  /* Every 20ms: beat comm timeout */
         last_keep_alive = now;
 
-        uint8_t keep = BQ_CONTROL1_SEND_WAKE_MASK | 0x01u; /* 0x21 */
+        uint8_t keep = BQ_CONTROL1_SEND_WAKE_MASK | BQ_CONTROL1_KEEP_ALIVE_MASK; /* 0x21 */
         int bq_status = bq7961x_single_write(DEVICE_ADDR,
                                              CONTROL1,
                                              &keep,
@@ -711,7 +695,7 @@ bool bq79616_service_task(void) // Uses BQ79616 Chip to externally read Voltages
         /* Tolerate short transient comm glitches before disabling BQ. */
         if (bq_status != 0) {
             consecutive_keepalive_failures++;
-            if (consecutive_keepalive_failures >= 3u) {
+            if (consecutive_keepalive_failures >= BQ_COMM_FAILURE_THRESHOLD) {
                 LOG_PRINT(LOG_TYPE_ERROR, "BQ Keep-Alive Write FAILED repeatedly (%u). Disabling BQ task.",
                           (unsigned)consecutive_keepalive_failures);
                 volt_status = FAILED;
@@ -726,7 +710,7 @@ bool bq79616_service_task(void) // Uses BQ79616 Chip to externally read Voltages
     /* Poll one diagnostic register per service slot so CAN does not get stuck
      * behind a sequence of long fault reads when BQ comms are missing.
      * Round-robin phase: FAULT_SYS -> FAULT_COMM1 -> FAULT_PWR1 -> FAULT_PWR2. */
-    if ((now - fault_check_tick) >= 200u) {
+    if ((now - fault_check_tick) >= BQ_FAULT_POLL_INTERVAL_MS) {
         uint8_t fault_val = 0u;
         int bq_status = 0;
 
@@ -772,7 +756,7 @@ bool bq79616_service_task(void) // Uses BQ79616 Chip to externally read Voltages
 
         if (bq_status != 0) {
             consecutive_fault_failures++;
-            if (consecutive_fault_failures >= 3u) {
+            if (consecutive_fault_failures >= BQ_COMM_FAILURE_THRESHOLD) {
                 LOG_PRINT(LOG_TYPE_ERROR, "BQ fault poll FAILED repeatedly (%u). Comm lost; disabling BQ task.",
                           (unsigned)consecutive_fault_failures);
                 volt_status = FAILED;
@@ -792,10 +776,10 @@ bool bq79616_service_task(void) // Uses BQ79616 Chip to externally read Voltages
         }
 
         consecutive_fault_failures = 0u;
-        fault_poll_phase = (uint8_t)((fault_poll_phase + 1u) % 4u);
+        fault_poll_phase = (uint8_t)((fault_poll_phase + 1u) % BQ_FAULT_POLL_PHASE_COUNT);
 
         if ((last_fault_sys | last_fault_comm1 | last_fault_pwr1 | last_fault_pwr2) != 0u) {
-            if ((now - last_fault_reg_log_tick) >= 1000u) {
+            if ((now - last_fault_reg_log_tick) >= BQ_FAULT_REG_LOG_INTERVAL_MS) {
                 LOG_PRINT(LOG_TYPE_WARN, "FAULT_SYS=0x%02X FAULT_COMM1=0x%02X FAULT_PWR1=0x%02X FAULT_PWR2=0x%02X",
                          last_fault_sys, last_fault_comm1, last_fault_pwr1, last_fault_pwr2);
                 last_fault_reg_log_tick = now;
@@ -823,7 +807,7 @@ bool bq79616_service_task(void) // Uses BQ79616 Chip to externally read Voltages
         }
     }
 
-    if ((now - last_cell_snapshot_tick) >= 100u) {
+    if ((now - last_cell_snapshot_tick) >= BQ_CELL_SNAPSHOT_INTERVAL_MS) {
         uint16_t cell_mv[MAX_VOLTAGE] = {0};
         int cell_status = bq79616_read_all_cells_with_timeout_(cell_mv, MAX_VOLTAGE, BQ_SERVICE_TIMEOUT_MS);
 
@@ -848,24 +832,14 @@ bool bq79616_service_task(void) // Uses BQ79616 Chip to externally read Voltages
                          (unsigned)(i + 1u),
                          (unsigned)(i + 1u),
                          (unsigned)mv,
-                         (unsigned)(mv / 1000u),
-                         (unsigned)(mv % 1000u));
+                         (unsigned)(mv / THERM_MV_PER_VOLT),
+                         (unsigned)(mv % THERM_MV_PER_VOLT));
             }
         }
     }
     
     return true; /* Communication is still good, keep running */
 }
-
-
-#define RST_SYS_BIT        0x01u
-#define RST_PWR_BIT        0x02u
-
-#define RST_COMM1_BIT        0x01u
-#define RST_COMM2_BIT        0x02u
-#define RST_COMM3_HB_BIT     0x04u
-#define RST_COMM3_FTONE_BIT  0x08u
-#define RST_COMM3_FCOMM_BIT  0x10u
 
 int bq79616_clear_startup_faults(void)
 {
@@ -874,13 +848,13 @@ int bq79616_clear_startup_faults(void)
     uint8_t summary;
 
     /* Allow time for device to finish wake/auto-address transitions */
-    HAL_Delay(10u);
+    HAL_Delay(BQ_STARTUP_FAULT_SETTLE_MS);
 
     LOG_PRINT(LOG_TYPE_INFO, CYAN, "Reading FAULT_SUMMARY before clear...");
     status = bq7961x_single_read(DEVICE_ADDR, FAULT_SUMMARY, &val, sizeof(val), BQ_FIRST_READ_TIMEOUT_MS);
     if (status != 0) {
         /* Retry a couple of times before giving up */
-        HAL_Delay(5u);
+        HAL_Delay(BQ_STARTUP_FAULT_RETRY_DELAY_MS);
         status = bq7961x_single_read(DEVICE_ADDR, FAULT_SUMMARY, &val, sizeof(val), BQ_FIRST_READ_TIMEOUT_MS);
     }
     if (status != 0) {
@@ -923,16 +897,16 @@ int bq79616_clear_startup_faults(void)
     LOG_PRINT(LOG_TYPE_WARN, CYAN, "FAULT_COMM3 = 0x%02X", val);
 
     /* If CUST_CRC fault (bit 5 of FAULT_SUMMARY) is set, update CRC then clear */
-    if (summary & 0x20u) {
+    if (summary & BQ_FAULT_SUMMARY_CUST_CRC_BIT) {
         status = bq79616_update_cust_crc();
         if (status != 0) {
             LOG_PRINT(LOG_TYPE_WARN, CYAN, "CUST_CRC update failed (bq_status=%d); masking to allow run", status);
-            (void)WriteReg(0u, FAULT_MSK2, 0x40u, 1u, FRMWRT_ALL_W);
+            (void)WriteReg(0u, FAULT_MSK2, BQ_FAULT_MASK2_CUST_CRC_MASK, 1u, FRMWRT_ALL_W);
         }
     }
 
     /* Clear system + power faults */
-    uint64_t rst1_val = 0xFFFFu;
+    uint64_t rst1_val = BQ_FAULT_RESET_ALL_VALUE;
     status = WriteReg(DEVICE_ADDR, FAULT_RST1, rst1_val, 2u, FRMWRT_SGL_W);
     if (status != 0) {
         LOG_PRINT(LOG_TYPE_ERROR, CYAN, "Failed to write FAULT_RST1");
@@ -941,7 +915,7 @@ int bq79616_clear_startup_faults(void)
     LOG_PRINT(LOG_TYPE_INFO, CYAN, "Wrote FAULT_RST1 = 0x%04X", (unsigned)rst1_val);
 
     /* Clear communication-related faults */
-    uint64_t rst2_val = 0xFFFFu;
+    uint64_t rst2_val = BQ_FAULT_RESET_ALL_VALUE;
     status = WriteReg(DEVICE_ADDR, FAULT_RST2, rst2_val, 2u, FRMWRT_SGL_W);
     if (status != 0) {
         LOG_PRINT(LOG_TYPE_ERROR, CYAN, "Failed to write FAULT_RST2");
@@ -949,7 +923,7 @@ int bq79616_clear_startup_faults(void)
     }
     LOG_PRINT(LOG_TYPE_INFO, CYAN, "Wrote FAULT_RST2 = 0x%04X", (unsigned)rst2_val);
 
-    HAL_Delay(2u);
+    HAL_Delay(BQ_POST_CLEAR_DELAY_MS);
 
     status = bq7961x_single_read(DEVICE_ADDR, FAULT_SUMMARY, &val, sizeof(val), BQ_FAST_TIMEOUT_MS);
     if (status != 0) {
@@ -971,7 +945,7 @@ int bq79616_clear_startup_faults(void)
 int bq79616_update_cust_crc(void)
 {
     uint8_t crc_rslt[2] = {0};
-    HAL_Delay(20u); /* allow customer area load */
+    HAL_Delay(BQ_CUST_CRC_LOAD_DELAY_MS); /* allow customer area load */
 
     int status = bq7961x_single_read(DEVICE_ADDR, CUST_CRC_RSLT_HI, crc_rslt, 2u, BQ_FIRST_READ_TIMEOUT_MS);
     if (status != 0) {
@@ -988,9 +962,9 @@ int bq79616_update_cust_crc(void)
     LOG_PRINT(LOG_TYPE_INFO, CYAN, "CUST_CRC updated to 0x%04X (RSLT_HI/LO=%02X%02X)", (unsigned)crc_val, crc_rslt[0], crc_rslt[1]);
 
     /* Clear faults after CRC update */
-    (void)WriteReg(DEVICE_ADDR, FAULT_RST1, 0xFFFFu, 2u, FRMWRT_SGL_W);
-    (void)WriteReg(DEVICE_ADDR, FAULT_RST2, 0xFFFFu, 2u, FRMWRT_SGL_W);
-    HAL_Delay(2u);
+    (void)WriteReg(DEVICE_ADDR, FAULT_RST1, BQ_FAULT_RESET_ALL_VALUE, 2u, FRMWRT_SGL_W);
+    (void)WriteReg(DEVICE_ADDR, FAULT_RST2, BQ_FAULT_RESET_ALL_VALUE, 2u, FRMWRT_SGL_W);
+    HAL_Delay(BQ_POST_CLEAR_DELAY_MS);
 
     return 0;
 }
@@ -1032,11 +1006,11 @@ int bq79616_log_fault_registers(void)
             LOG_PRINT(LOG_TYPE_INFO, "FAULT_COMM3=0x%02X", val);
 
         /* If CRC fault present, attempt update here too */
-        if (summary & 0x20u) {
+        if (summary & BQ_FAULT_SUMMARY_CUST_CRC_BIT) {
             status = bq79616_update_cust_crc();
             if (status != 0) {
                 LOG_PRINT(LOG_TYPE_WARN, "CUST_CRC update (periodic) failed bq_status=%d; masking", status);
-                (void)WriteReg(0u, FAULT_MSK2, 0x40u, 1u, FRMWRT_ALL_W);
+                (void)WriteReg(0u, FAULT_MSK2, BQ_FAULT_MASK2_CUST_CRC_MASK, 1u, FRMWRT_ALL_W);
             }
         }
     }
@@ -1050,14 +1024,14 @@ int bq79616_log_fault_registers(void)
 
 int WriteReg(uint8_t bID, uint16_t wAddr, uint64_t dwData, uint8_t bLen, uint8_t bWriteType)
 {
-    if (bLen < 1u || bLen > 8u) {
+    if (bLen < BQ_CMD_DATA_BYTES_MIN || bLen > BQ_CMD_DATA_BYTES_MAX) {
         return -1;
     }
 
-    uint8_t buf[8] = {0};
+    uint8_t buf[BQ_CMD_DATA_BYTES_MAX] = {0};
     for (uint8_t i = 0u; i < bLen; i++) {
         /* MSB first (matches TI reference code ordering) */
-        buf[i] = (uint8_t)((dwData >> (8u * (bLen - 1u - i))) & 0xFFu);
+        buf[i] = (uint8_t)((dwData >> (8u * (bLen - 1u - i))) & BQ_BYTE_MASK);
     }
 
     switch (bWriteType) {
@@ -1093,23 +1067,23 @@ int ReadReg(uint8_t bID, uint16_t wAddr, uint8_t *pData, uint8_t bLen, uint32_t 
     /* Build a response frame that mirrors TI's expected layout:
      * INIT | DEV | REG_H | REG_L | DATA... | CRC_L | CRC_H
      */
-    uint8_t init = (uint8_t)((bLen - 1u) & 0x7Fu); /* response_bytes-1 */
+    uint8_t init = (uint8_t)((bLen - 1u) & BQ_INIT_RESPONSE_LEN_MASK); /* response_bytes-1 */
     pData[0] = init;
     pData[1] = (uint8_t)(dev & BQ_DEV_ADDR_MAX);
-    pData[2] = (uint8_t)((wAddr >> 8) & 0xFFu);
-    pData[3] = (uint8_t)(wAddr & 0xFFu);
+    pData[2] = (uint8_t)((wAddr >> 8) & BQ_BYTE_MASK);
+    pData[3] = (uint8_t)(wAddr & BQ_BYTE_MASK);
     memcpy(&pData[4], payload, bLen);
 
-    uint16_t crc = bq79616_crc16(pData, (uint16_t)(4u + bLen));
-    pData[4 + bLen] = (uint8_t)(crc & 0xFFu);
-    pData[5 + bLen] = (uint8_t)((crc >> 8) & 0xFFu);
+    uint16_t crc = bq79616_crc16(pData, (uint16_t)(BQ_RESPONSE_PREFIX_BYTES + bLen));
+    pData[4 + bLen] = (uint8_t)(crc & BQ_BYTE_MASK);
+    pData[5 + bLen] = (uint8_t)((crc >> 8) & BQ_BYTE_MASK);
 
-    return (int)(bLen + 6u); /* total frame length returned */
+    return (int)(bLen + BQ_RESPONSE_FRAME_OVERHEAD_BYTES); /* total frame length returned */
 }
 
 void ResetAllFaults(uint8_t bID, uint8_t bWriteType)
 {
-    uint64_t rst_val = 0xFFFFu; /* two bytes */
+    uint64_t rst_val = BQ_FAULT_RESET_ALL_VALUE; /* two bytes */
     (void)bID;
     if (bWriteType == FRMWRT_ALL_W) {
         (void)WriteReg(0u, FAULT_RST1, rst_val, 2u, FRMWRT_ALL_W);
@@ -1124,24 +1098,24 @@ int bq79616_auto_address_single(void)
     int status;
 
     /* Dummy writes to sync DLLs */
-    status = WriteReg(0u, OTP_ECC_DATAIN1, 0x00u, 1u, FRMWRT_ALL_W); if (status != 0) return status;
-    status = WriteReg(0u, OTP_ECC_DATAIN2, 0x00u, 1u, FRMWRT_ALL_W); if (status != 0) return status;
-    status = WriteReg(0u, OTP_ECC_DATAIN3, 0x00u, 1u, FRMWRT_ALL_W); if (status != 0) return status;
-    status = WriteReg(0u, OTP_ECC_DATAIN4, 0x00u, 1u, FRMWRT_ALL_W); if (status != 0) return status;
-    status = WriteReg(0u, OTP_ECC_DATAIN5, 0x00u, 1u, FRMWRT_ALL_W); if (status != 0) return status;
-    status = WriteReg(0u, OTP_ECC_DATAIN6, 0x00u, 1u, FRMWRT_ALL_W); if (status != 0) return status;
-    status = WriteReg(0u, OTP_ECC_DATAIN7, 0x00u, 1u, FRMWRT_ALL_W); if (status != 0) return status;
-    status = WriteReg(0u, OTP_ECC_DATAIN8, 0x00u, 1u, FRMWRT_ALL_W); if (status != 0) return status;
+    status = WriteReg(0u, OTP_ECC_DATAIN1, BQ_AUTO_ADDR_DUMMY_WRITE_VALUE, 1u, FRMWRT_ALL_W); if (status != 0) return status;
+    status = WriteReg(0u, OTP_ECC_DATAIN2, BQ_AUTO_ADDR_DUMMY_WRITE_VALUE, 1u, FRMWRT_ALL_W); if (status != 0) return status;
+    status = WriteReg(0u, OTP_ECC_DATAIN3, BQ_AUTO_ADDR_DUMMY_WRITE_VALUE, 1u, FRMWRT_ALL_W); if (status != 0) return status;
+    status = WriteReg(0u, OTP_ECC_DATAIN4, BQ_AUTO_ADDR_DUMMY_WRITE_VALUE, 1u, FRMWRT_ALL_W); if (status != 0) return status;
+    status = WriteReg(0u, OTP_ECC_DATAIN5, BQ_AUTO_ADDR_DUMMY_WRITE_VALUE, 1u, FRMWRT_ALL_W); if (status != 0) return status;
+    status = WriteReg(0u, OTP_ECC_DATAIN6, BQ_AUTO_ADDR_DUMMY_WRITE_VALUE, 1u, FRMWRT_ALL_W); if (status != 0) return status;
+    status = WriteReg(0u, OTP_ECC_DATAIN7, BQ_AUTO_ADDR_DUMMY_WRITE_VALUE, 1u, FRMWRT_ALL_W); if (status != 0) return status;
+    status = WriteReg(0u, OTP_ECC_DATAIN8, BQ_AUTO_ADDR_DUMMY_WRITE_VALUE, 1u, FRMWRT_ALL_W); if (status != 0) return status;
 
     /* Enable AUTO_ADDR */
-    status = WriteReg(0u, CONTROL1, 0x01u, 1u, FRMWRT_ALL_W); if (status != 0) return status;
+    status = WriteReg(0u, CONTROL1, BQ_AUTO_ADDR_ENABLE_VALUE, 1u, FRMWRT_ALL_W); if (status != 0) return status;
 
     /* Set address of the single board to 0 */
-    status = WriteReg(0u, DIR0_ADDR, 0x00u, 1u, FRMWRT_ALL_W); if (status != 0) return status;
+    status = WriteReg(0u, DIR0_ADDR, BQ_AUTO_ADDR_DEVICE_ADDR_VALUE, 1u, FRMWRT_ALL_W); if (status != 0) return status;
 
     /* Set all to stack mode then single device base+top */
-    status = WriteReg(0u, COMM_CTRL, 0x02u, 1u, FRMWRT_ALL_W); if (status != 0) return status;
-    status = WriteReg(0u, COMM_CTRL, 0x01u, 1u, FRMWRT_SGL_W); if (status != 0) return status;
+    status = WriteReg(0u, COMM_CTRL, BQ_COMM_CTRL_STACK_MODE_VALUE, 1u, FRMWRT_ALL_W); if (status != 0) return status;
+    status = WriteReg(0u, COMM_CTRL, BQ_COMM_CTRL_BASE_TOP_VALUE, 1u, FRMWRT_SGL_W); if (status != 0) return status;
 
     /* Throw-away reads to sync DLL */
     uint8_t dummy[2];
@@ -1155,7 +1129,7 @@ int bq79616_auto_address_single(void)
     (void)ReadReg(0u, OTP_ECC_DATAIN8, dummy, 1u, BQ_FAST_TIMEOUT_MS, FRMWRT_ALL_R);
 
     /* Clear comm faults */
-    (void)WriteReg(0u, FAULT_RST2, 0x03u, 1u, FRMWRT_ALL_W);
+    (void)WriteReg(0u, FAULT_RST2, BQ_FAULT_RST2_COMM_CLEAR_VALUE, 1u, FRMWRT_ALL_W);
 
     return 0;
 }
@@ -1164,17 +1138,23 @@ int bq79616_config_main_adc(void)
 {
     /* Configure exact active-cell count, LPF 26 Hz, continuous + MAIN_GO. */
     int status;
-    status = WriteReg(DEVICE_ADDR, ACTIVE_CELL, BQ_ACTIVE_CELL_NUM_VALUE, 1u, FRMWRT_SGL_W);
+    uint8_t num_cells_configured = (MAX_VOLTAGE < BQ_ACTIVE_CELL_MIN) ? BQ_ACTIVE_CELL_MIN : (uint8_t)MAX_VOLTAGE;
+    if (num_cells_configured > BQ_ACTIVE_CELL_MAX) {
+        num_cells_configured = BQ_ACTIVE_CELL_MAX;
+    }
+    uint8_t active_cell_num_value = (uint8_t)(num_cells_configured - BQ_ACTIVE_CELL_ENCODING_OFFSET);
+
+    status = WriteReg(DEVICE_ADDR, ACTIVE_CELL, active_cell_num_value, 1u, FRMWRT_SGL_W);
     if (status != 0) return status;
 
-    status = WriteReg(DEVICE_ADDR, ADC_CONF1, 0x02u, 1u, FRMWRT_SGL_W);
+    status = WriteReg(DEVICE_ADDR, ADC_CONF1, BQ_ADC_CONF1_VALUE, 1u, FRMWRT_SGL_W);
     if (status != 0) return status;
 
-    status = WriteReg(DEVICE_ADDR, ADC_CTRL1, 0x0Eu, 1u, FRMWRT_SGL_W); /* continuous + LPF + MAIN_GO */
+    status = WriteReg(DEVICE_ADDR, ADC_CTRL1, BQ_ADC_CTRL1_CONTINUOUS_MAIN_GO, 1u, FRMWRT_SGL_W); /* continuous + LPF + MAIN_GO */
     if (status != 0) return status;
 
     /* Allow LPF to settle: 38 ms + small margin */
-    bq_delay_us(38000u + (5u * BQ_STACK_COUNT));
+    bq_delay_us(BQ_LPF_SETTLE_BASE_US + (BQ_LPF_SETTLE_PER_STACK_US * BQ_STACK_COUNT));
     return 0;
 }
 
@@ -1186,7 +1166,7 @@ int bq79616_init_device(void)
     bq79616_wake();
 
     /* Allow settle after shutdown->active transition */
-    bq_delay_us(4000u);
+    bq_delay_us(BQ_STARTUP_SETTLE_US);
 
     /* Clear any startup faults (best-effort) */
     ResetAllFaults(DEVICE_ADDR, FRMWRT_SGL_W);
@@ -1230,36 +1210,36 @@ bool bq79616_try_init(void)
 
 static int bq79616_read_all_cells_with_timeout_(uint16_t *out_mv, size_t cell_count, uint32_t timeout_ms)
 {
-    if (!out_mv || cell_count == 0u || cell_count > 16u) {
+    if (!out_mv || cell_count == 0u || cell_count > BQ_READ_ALL_CELLS_COUNT) {
         return -1;
     }
 
-    uint8_t raw[32] = {0};
-    uint16_t parsed_mv[16] = {0};
-    int status = bq7961x_single_read(DEVICE_ADDR, VCELL16_HI, raw, 32u, timeout_ms);
+    uint8_t raw[BQ_READ_ALL_CELLS_RAW_BYTES] = {0};
+    uint16_t parsed_mv[BQ_READ_ALL_CELLS_COUNT] = {0};
+    int status = bq7961x_single_read(DEVICE_ADDR, VCELL16_HI, raw, BQ_READ_ALL_CELLS_RAW_BYTES, timeout_ms);
     if (status != 0) {
         return status;
     }
 
     /* VCELL16_HI .. VCELL1_LO, 2 bytes per cell, descending cell order */
-    for (size_t i = 0; i < 16u; i++) {
+    for (size_t i = 0; i < BQ_READ_ALL_CELLS_COUNT; i++) {
         size_t byte_idx = i * 2u;
         uint16_t adc_raw = (uint16_t)((raw[byte_idx] << 8) | raw[byte_idx + 1u]);
 
         /* Convert to mV using 190.73 uV/LSB */
-        uint32_t mv = (uint32_t)adc_raw * 19073u;
-        mv = mv / 100000u;
+        uint32_t mv = (uint32_t)adc_raw * BQ_ALL_CELLS_MV_NUMERATOR;
+        mv = mv / BQ_ALL_CELLS_MV_DENOMINATOR;
 
         /* Map so parsed_mv[0] corresponds to cell 1 (ascending order) */
-        size_t cell = 16u - i;           /* cell number (16..1) */
+        size_t cell = BQ_READ_ALL_CELLS_COUNT - i;           /* cell number (16..1) */
         size_t idx_out = cell - 1u;      /* zero-based */
         parsed_mv[idx_out] = (uint16_t)mv;
 
         /* Add calibration offset for cells 1 and 14 */
-        if (idx_out == 0u) {  
-            parsed_mv[idx_out] = (uint16_t)(mv + 1000u);
-        } else if (idx_out == 13u){
-            parsed_mv[idx_out] = (uint16_t)(mv + 1300u);
+        if (idx_out == BQ_CELL1_INDEX) {
+            parsed_mv[idx_out] = (uint16_t)(mv + BQ_CELL1_CAL_OFFSET_MV);
+        } else if (idx_out == BQ_CELL14_INDEX){
+            parsed_mv[idx_out] = (uint16_t)(mv + BQ_CELL14_CAL_OFFSET_MV);
         } else{
             parsed_mv[idx_out] = (uint16_t)mv;
         }

@@ -6,12 +6,6 @@
 #include "master.h"
 #include "therm.h" /* for THERM_REF_MV and THERM_MAX_COUNTS */
 
-#define THERM_HOT_C 65
-#define CAN_DEBUG_EMU_MODULES              2u
-#define CAN_DEBUG_EMU_CHANNELS_PER_MODULE  5u
-#define THERM_FAULT_PERSIST_LOG_MS         5000u
-#define CAN_TX_DROP_LOG_PERIOD_MS          3000u
-
 ThermistorCache_t s_cache = {0};
 static uint16_t s_prev_fault_mask = 0u;
 static uint16_t s_prev_hot_mask = 0u;
@@ -23,7 +17,7 @@ static const ThermJ1939ClaimMsg_t s_default_claim = {
     .unique_id = { ORION_CLAIM_UNIQUE_ID0, ORION_CLAIM_UNIQUE_ID1, ORION_CLAIM_UNIQUE_ID2 },
     .bms_target = ORION_BMS_TARGET_ADDR,
     .thermistor_module = ORION_THERM_MODULE_INDEX,
-    .constant = { 0x40, 0x1E, 0x90 }
+    .constant = { ORION_CLAIM_CONSTANT0, ORION_CLAIM_CONSTANT1, ORION_CLAIM_CONSTANT2 }
 };
 
 static uint16_t CAN_ThermMask(uint8_t therm_index)
@@ -82,9 +76,9 @@ static uint8_t CAN_PackTemp(int8_t temp_c)
 
 static uint8_t CAN_ComputeBmsChecksum(const uint8_t *payload)
 {
-    uint16_t sum = 0x39u + 8u;
+    uint16_t sum = CAN_BMS_CHECKSUM_BASE + CAN_FRAME_LEN_BYTES;
 
-    for (uint8_t i = 0U; i < 7U; i++) {
+    for (uint8_t i = 0U; i < CAN_BMS_CHECKSUM_DATA_BYTES; i++) {
         sum += (uint8_t)payload[i];
     }
 
@@ -93,7 +87,7 @@ static uint8_t CAN_ComputeBmsChecksum(const uint8_t *payload)
 
 static uint16_t CAN_GlobalThermistorIdForModule(uint8_t module_index, uint8_t local_index)
 {
-    return (uint16_t)((uint16_t)module_index * 80u) + (uint16_t)local_index;
+    return (uint16_t)((uint16_t)module_index * CAN_GLOBAL_THERM_STRIDE) + (uint16_t)local_index;
 }
 
 static bool CAN_DebugDualModuleActive(void)
@@ -112,22 +106,26 @@ static bool CAN_ModuleFaultActive(const ThermistorCache_t *cache)
 
 static uint32_t CAN_ClaimIdForSource(uint8_t source_addr)
 {
-    return 0x18EEFF00u | (uint32_t)source_addr;
+    return THERM_J1939_CLAIM_ID_BASE | (uint32_t)source_addr;
 }
 
 static uint32_t CAN_BmsIdForSource(uint8_t source_addr)
 {
-    return 0x18390000u | ((uint32_t)ORION_BMS_TARGET_ADDR << 8) | (uint32_t)source_addr;
+    return THERM_BMS_BROADCAST_ID_BASE |
+           ((uint32_t)ORION_BMS_TARGET_ADDR << CAN_SOURCE_ADDR_SHIFT_BITS) |
+           (uint32_t)source_addr;
 }
 
 static uint32_t CAN_GeneralIdForSource(uint8_t source_addr)
 {
-    return 0x18380000u | ((uint32_t)ORION_BMS_TARGET_ADDR << 8) | (uint32_t)source_addr;
+    return THERM_GENERAL_BROADCAST_ID_BASE |
+           ((uint32_t)ORION_BMS_TARGET_ADDR << CAN_SOURCE_ADDR_SHIFT_BITS) |
+           (uint32_t)source_addr;
 }
 
 static uint32_t CAN_ExternalADCVoltageIdForSegment(uint8_t segment_index)
 {
-    return EXTERNAL_ADC_VOLTAGE_BASE_ID | (uint32_t)(segment_index & 0x03u);
+    return EXTERNAL_ADC_VOLTAGE_BASE_ID | (uint32_t)(segment_index & CAN_EXTV_SEGMENT_INDEX_MASK);
 }
 
 static void CAN_LogTxFailure_(const char *frame_name, uint32_t can_id, int result)
@@ -157,7 +155,7 @@ static void CAN_LogTxFailure_(const char *frame_name, uint32_t can_id, int resul
 
 static void CAN_LogExternalVoltageTx_(uint32_t ext_id,
                                       uint8_t segment_index,
-                                      const uint8_t payload[8],
+                                      const uint8_t payload[CAN_FRAME_LEN_BYTES],
                                       uint32_t now_ms)
 {
     static uint32_t s_last_any_ms = 0u;
@@ -196,7 +194,7 @@ static void CAN_EncodeJ1939ClaimForModule(uint8_t source_addr, uint8_t module_in
     payload[1] = ORION_CLAIM_UNIQUE_ID1;         /* 0x00 */
     payload[2] = source_addr;                    /* 0x80, 0x81, ... */
     payload[3] = ORION_BMS_TARGET_ADDR;          /* 0xF3 */
-    payload[4] = (uint8_t)(module_index << 3);   /* module index << 3 */
+    payload[4] = (uint8_t)(module_index << ORION_CLAIM_MODULE_INDEX_SHIFT);   /* module index << 3 */
     payload[5] = s_default_claim.constant[0];    /* 0x40 */
     payload[6] = s_default_claim.constant[1];    /* 0x1E */
     payload[7] = s_default_claim.constant[2];    /* 0x90 */
@@ -210,7 +208,7 @@ static void CAN_EncodeExternalADCVoltage(uint8_t segment_index,
     const uint8_t clamped_count = (count > MAX_VOLTAGE) ? MAX_VOLTAGE : count;
     const uint8_t start_index = (uint8_t)(segment_index * EXTERNAL_ADC_VOLTAGES_PER_FRAME);
 
-    memset(payload, 0, 8u);
+    memset(payload, 0, CAN_FRAME_LEN_BYTES);
 
     for (uint8_t slot = 0u; slot < EXTERNAL_ADC_VOLTAGES_PER_FRAME; slot++) {
         const uint8_t value_index = (uint8_t)(start_index + slot);
@@ -220,8 +218,8 @@ static void CAN_EncodeExternalADCVoltage(uint8_t segment_index,
             millivolts = out_mv[value_index];
         }
 
-        payload[(uint8_t)(slot * 2u)] = (uint8_t)(millivolts & 0x00FFu);
-        payload[(uint8_t)(slot * 2u + 1u)] = (uint8_t)((millivolts >> 8u) & 0x00FFu);
+        payload[(uint8_t)(slot * 2u)] = (uint8_t)(millivolts & CAN_BYTE_MASK);
+        payload[(uint8_t)(slot * 2u + 1u)] = (uint8_t)((millivolts >> CAN_SOURCE_ADDR_SHIFT_BITS) & CAN_BYTE_MASK);
     }
 }
 
@@ -229,7 +227,7 @@ static void CAN_EncodeBmsForCache(const ThermistorCache_t *cache,
                                   uint8_t module_index,
                                   uint8_t *payload)
 {
-    const uint8_t enabled = (uint8_t)(cache->valid_count & 0x7FU);
+    const uint8_t enabled = (uint8_t)(cache->valid_count & CAN_ENABLED_COUNT_MASK);
 
     payload[0] = module_index;                    /* Module number (zero-based) */
     payload[1] = CAN_PackTemp(cache->min_temp);   /* Lowest temp (int8_t) */
@@ -238,7 +236,7 @@ static void CAN_EncodeBmsForCache(const ThermistorCache_t *cache,
 
     uint8_t module_fault_flag = 0u;
     if (CAN_ModuleFaultActive(cache)) {
-        module_fault_flag = 0x80u;
+        module_fault_flag = CAN_MODULE_FAULT_FLAG_MASK;
     }
 
     payload[4] = (uint8_t)(enabled | module_fault_flag);
@@ -265,13 +263,13 @@ static void CAN_EncodeGeneralForCache(const ThermistorCache_t *cache,
     const uint16_t global_id = CAN_GlobalThermistorIdForModule(module_index, capped_idx);
     const bool therm_fault = (cache->fault_mask & CAN_ThermMask(capped_idx)) != 0u;
 
-    payload[0] = (uint8_t)(global_id & 0x00FFu);            /* Global ID low byte */
-    payload[1] = (uint8_t)((global_id >> 8U) & 0x00FFu);    /* Global ID high byte */
+    payload[0] = (uint8_t)(global_id & CAN_BYTE_MASK);                                      /* Global ID low byte */
+    payload[1] = (uint8_t)((global_id >> CAN_SOURCE_ADDR_SHIFT_BITS) & CAN_BYTE_MASK);      /* Global ID high byte */
     payload[2] = CAN_PackTemp(this_temp);                   /* Thermistor value (int8_t) */
 
     uint8_t therm_fault_flag = 0u;
     if (therm_fault) {
-        therm_fault_flag = 0x80u;
+        therm_fault_flag = CAN_THERM_FAULT_FLAG_MASK;
     }
 
     payload[3] = (uint8_t)(capped_idx | therm_fault_flag);
@@ -298,7 +296,7 @@ static bool CAN_SendExternalADCVoltageFrame_(uint8_t segment_index, uint8_t *pay
                                      g_can_ctx.voltages.num_active,
                                      payload);
 
-        result = CAN_Comm_SendExt(ext_id, payload, 8u);
+        result = CAN_Comm_SendExt(ext_id, payload, CAN_FRAME_LEN_BYTES);
         if (result != 0) {
             CAN_LogTxFailure_("extv", ext_id, result);
             return false;
@@ -339,8 +337,8 @@ static void CAN_BuildModuleCacheFromAdc(uint8_t start_idx,
         cache->count = module_count;
     }
 
-    cache->min_temp = 127;
-    cache->max_temp = -128;
+    cache->min_temp = ORION_THERM_MAX_VALID_C;
+    cache->max_temp = ORION_THERM_MIN_VALID_C;
     cache->min_id = 0U;
     cache->max_id = (cache->count > 0U) ? (uint8_t)(cache->count - 1U) : 0U;
 
@@ -370,7 +368,7 @@ static void CAN_BuildModuleCacheFromAdc(uint8_t start_idx,
             }
         }
 
-        if (!therm_fault && temp_c > THERM_HOT_C) {
+        if (!therm_fault && temp_c > ORION_THERM_HOT_THRESHOLD_C) {
             therm_too_hot = true;
         }
 
@@ -394,8 +392,8 @@ static void CAN_BuildModuleCacheFromAdc(uint8_t start_idx,
             LOG_PRINT(LOG_TYPE_WARN, "Thermistor %u too hot: %dC (adc=%u, %lu.%03lu V)",
                      (unsigned)(abs_idx + 1U), (int)temp_c,
                      (unsigned)adc_raw,
-                     (unsigned long)(millivolts / 1000u),
-                     (unsigned long)(millivolts % 1000u));
+                     (unsigned long)(millivolts / THERM_MV_PER_VOLT),
+                     (unsigned long)(millivolts % THERM_MV_PER_VOLT));
         }
 
         if (temp_c < cache->min_temp) {
@@ -436,8 +434,8 @@ void ConvertAllThermistors(const uint16_t *adc_values, uint8_t count)
         s_cache.count = count;
     }
     s_cache.valid_count = 0u;
-    s_cache.min_temp = 127;
-    s_cache.max_temp = -128;
+    s_cache.min_temp = ORION_THERM_MAX_VALID_C;
+    s_cache.max_temp = ORION_THERM_MIN_VALID_C;
     /* Orion bytes 6/7 report the module's loaded thermistor range, not hottest/coldest IDs. */
     s_cache.min_id = 0U;
     if (s_cache.count > 0U) {
@@ -475,15 +473,15 @@ void ConvertAllThermistors(const uint16_t *adc_values, uint8_t count)
 
         /* Track over-temperature separately from invalid-sensor faults.
          * Over-temp must remain valid in CAN stats so BMS can report a hot condition. */
-        if (!therm_fault && temp_c > THERM_HOT_C) {
+        if (!therm_fault && temp_c > ORION_THERM_HOT_THRESHOLD_C) {
             hot_mask |= therm_mask;
             if ((s_prev_hot_mask & therm_mask) == 0u) {
                 const uint32_t millivolts = ((uint32_t)adc_raw * (uint32_t)THERM_REF_MV) / (uint32_t)THERM_MAX_COUNTS;
                 LOG_PRINT(LOG_TYPE_WARN, "Thermistor %u too hot: %dC (adc=%u, %lu.%03lu V)",
                          (unsigned)(i + 1U), (int)temp_c,
                          (unsigned)adc_raw,
-                         (unsigned long)(millivolts / 1000u),
-                         (unsigned long)(millivolts % 1000u));
+                         (unsigned long)(millivolts / THERM_MV_PER_VOLT),
+                         (unsigned long)(millivolts % THERM_MV_PER_VOLT));
             }
         }
 
@@ -549,7 +547,7 @@ void ConvertAllThermistors(const uint16_t *adc_values, uint8_t count)
         }
     }
 
-    const bool pack_too_hot = (s_cache.max_temp > THERM_HOT_C);
+    const bool pack_too_hot = (s_cache.max_temp > ORION_THERM_HOT_THRESHOLD_C);
     if (pack_too_hot && !s_prev_pack_hot) {
         LOG_PRINT(LOG_TYPE_WARN, "PACK TOO HOT: max=%dC id=%u", (int)s_cache.max_temp, (unsigned)s_cache.max_id);
     }
@@ -667,7 +665,7 @@ void CAN_SendMessages(void)
     static uint8_t emu_module_slot_rr = 0U;
     static uint8_t emu_claim_slot_rr = 0U;
     static uint8_t ext_voltage_segment_rr = 0U;
-    uint8_t payload[8];
+    uint8_t payload[CAN_FRAME_LEN_BYTES];
     int result;
     bool sent_claim_this_pass = false;
 
@@ -686,7 +684,7 @@ void CAN_SendMessages(void)
             const uint32_t claim_id = CAN_ClaimIdForSource(source_addr);
 
             CAN_EncodeJ1939ClaimForModule(source_addr, module_index, payload);
-            result = CAN_Comm_SendExt(claim_id, payload, 8U);
+            result = CAN_Comm_SendExt(claim_id, payload, CAN_FRAME_LEN_BYTES);
             CAN_Debug_RecordClaim(payload, now_ms);
 
             if (result != 0) {
@@ -724,7 +722,7 @@ void CAN_SendMessages(void)
             CAN_BuildModuleCacheFromAdc(start_idx, module_count, &module_cache);
 
             CAN_EncodeBmsForCache(&module_cache, module_index, payload);
-            result = CAN_Comm_SendExt(bms_id, payload, 8U);
+            result = CAN_Comm_SendExt(bms_id, payload, CAN_FRAME_LEN_BYTES);
             CAN_Debug_RecordBms(payload, now_ms);
             CAN_Debug_UpdateCoreState(module_index,
                                       source_addr,
@@ -748,7 +746,7 @@ void CAN_SendMessages(void)
                                       module_index,
                                       emu_therm_index[module_slot],
                                       payload);
-            result = CAN_Comm_SendExt(gen_id, payload, 8U);
+            result = CAN_Comm_SendExt(gen_id, payload, CAN_FRAME_LEN_BYTES);
             CAN_Debug_RecordGeneral(payload, now_ms);
             CAN_Debug_UpdateCoreState(module_index,
                                       source_addr,
@@ -797,7 +795,7 @@ void CAN_SendMessages(void)
     /* 200 ms: J1939 Address Claim */
     if (Timer_CheckCan200msFlag()) {
         EncodeJ1939Claim(payload);
-        result = CAN_Comm_SendExt(THERM_J1939_CLAIM_ID, payload, 8U);
+        result = CAN_Comm_SendExt(THERM_J1939_CLAIM_ID, payload, CAN_FRAME_LEN_BYTES);
         CAN_Debug_RecordClaim(payload, HAL_GetTick());
         if (result != 0) {
             CAN_LogTxFailure_("claim", THERM_J1939_CLAIM_ID, result);
@@ -812,7 +810,7 @@ void CAN_SendMessages(void)
         const uint32_t now_ms = HAL_GetTick();
         /* Send BMS Broadcast */
         EncodeBMSBroadcast(payload);
-        result = CAN_Comm_SendExt(THERM_BMS_BROADCAST_ID, payload, 8U);
+        result = CAN_Comm_SendExt(THERM_BMS_BROADCAST_ID, payload, CAN_FRAME_LEN_BYTES);
 
         CAN_Debug_RecordBms(payload, now_ms);
         CAN_Debug_UpdateCoreState(s_default_claim.thermistor_module,
@@ -836,7 +834,7 @@ void CAN_SendMessages(void)
 
         /* Send General Broadcast (round-robin) */
         EncodeGeneralBroadcast(therm_index, payload);
-        result = CAN_Comm_SendExt(THERM_GENERAL_BROADCAST_ID, payload, 8U);
+        result = CAN_Comm_SendExt(THERM_GENERAL_BROADCAST_ID, payload, CAN_FRAME_LEN_BYTES);
 
         CAN_Debug_RecordGeneral(payload, now_ms);
         CAN_Debug_UpdateCoreState(s_default_claim.thermistor_module,

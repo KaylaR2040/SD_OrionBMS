@@ -3,6 +3,10 @@
 
 #include "master.h"
 
+/* --- Debug logging cadence constants --- */
+#define CAN_DEBUG_LOG_MIN_DUAL_MODE_MS 100u
+#define CAN_DEBUG_PAYLOAD_LEN_BYTES    CAN_FRAME_LEN_BYTES
+
 typedef struct ThermistorCache ThermistorCache_t;
 
 /* Debug/fault injection API for thermistor channels */
@@ -30,9 +34,9 @@ uint16_t CAN_Debug_GetSensorFaultMask(void);
 
 /* Snapshot management */
 typedef struct {
-	uint8_t claim[8];
-	uint8_t bms[8];
-	uint8_t general[8];
+	uint8_t claim[CAN_DEBUG_PAYLOAD_LEN_BYTES];
+	uint8_t bms[CAN_DEBUG_PAYLOAD_LEN_BYTES];
+	uint8_t general[CAN_DEBUG_PAYLOAD_LEN_BYTES];
 	uint8_t last_bms_checksum;
 	uint8_t module_index;
 	uint8_t source_addr;
@@ -72,9 +76,9 @@ void CAN_Debug_UpdateCoreState(uint8_t module_index,
 							   uint8_t max_id,
 							   uint8_t min_id);
 
-void CAN_Debug_RecordClaim(const uint8_t payload[8], uint32_t now_ms);
-void CAN_Debug_RecordBms(const uint8_t payload[8], uint32_t now_ms);
-void CAN_Debug_RecordGeneral(const uint8_t payload[8], uint32_t now_ms);
+void CAN_Debug_RecordClaim(const uint8_t payload[CAN_DEBUG_PAYLOAD_LEN_BYTES], uint32_t now_ms);
+void CAN_Debug_RecordBms(const uint8_t payload[CAN_DEBUG_PAYLOAD_LEN_BYTES], uint32_t now_ms);
+void CAN_Debug_RecordGeneral(const uint8_t payload[CAN_DEBUG_PAYLOAD_LEN_BYTES], uint32_t now_ms);
 void CAN_Debug_SetLastGeneralInfo(uint16_t global_id, uint8_t local_id, int8_t temp_c);
 
 void CAN_Debug_RequestLogClaim(void);

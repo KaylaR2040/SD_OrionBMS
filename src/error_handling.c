@@ -10,7 +10,7 @@
 /** Busy-wait loop used while blinking the fatal error LED. */
 static void error_delay(void)
 { // Required because HAL (along with all other interrupts) is Disabled when Error_Handler is called
-    for (volatile uint32_t i = 0; i < 500000U; ++i) {
+    for (volatile uint32_t i = 0; i < ERROR_HANDLER_DELAY_ITERS; ++i) {
         __NOP();
     }
 }

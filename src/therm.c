@@ -10,10 +10,6 @@
 // Master project header
 #include "master.h"
 
-#define THERM_CONVERSION_TIMEOUT_MS  10U
-#define THERM_SAMPLE_TIME            ADC_SAMPLETIME_247CYCLES_5
-#define THERM_SETTLE_DELAY_ITERS     64U
-
 static void Therm_DelayForSettling(void);
 static HAL_StatusTypeDef Therm_PerformConversion(uint16_t *result);
 
@@ -40,11 +36,6 @@ const therm_channel_pin_t therm_channel_pins[THERM_APP_CHANNEL_COUNT] = {
 
 /** Primary ADC handle used across the application. */
 ADC_HandleTypeDef hadc1;
-
-/* Sampling happens immediately and continuously in the service loop */
-#define THERM_SAMPLE_PERIOD_MS      100U
-
-
 
 /* Initialize the STM32G4 on-chip ADC for thermistor measurements */
 void Therm_App_Init(void)
@@ -134,8 +125,8 @@ void Therm_LogCachedSnapshot(void)
         const uint16_t sample = g_can_ctx.thermistors.thermistor_adc_values[i];
         const uint32_t millivolts =
             ((uint32_t)sample * (uint32_t)THERM_REF_MV) / (uint32_t)THERM_MAX_COUNTS;
-        const uint32_t volts_whole = millivolts / 1000U;
-        const uint32_t volts_frac  = millivolts % 1000U;
+        const uint32_t volts_whole = millivolts / THERM_MV_PER_VOLT;
+        const uint32_t volts_frac  = millivolts % THERM_MV_PER_VOLT;
         const int temp_c = (int)Thermistor_ADCToTemp(sample);
 
         LOG_PRINT(LOG_TYPE_INFO, GREEN, CYAN "%-2lu" GREEN " %-6s (Pin %-2s) %5u -> " MAGENTA "%lu.%03lu V" GREEN " -> " ORANGE "%dC" GREEN,

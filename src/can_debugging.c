@@ -21,15 +21,10 @@ static uint32_t s_log_claim_last_ms = 0;
 static uint32_t s_log_bms_last_ms = 0;
 static uint32_t s_log_gen_last_ms = 0;
 
-#define LOG_MIN_CLAIM_INTERVAL_MS CAN_DEBUG_LOG_THROTTLE_MS
-#define LOG_MIN_BMS_INTERVAL_MS   CAN_DEBUG_LOG_THROTTLE_MS
-#define LOG_MIN_GEN_INTERVAL_MS   CAN_DEBUG_LOG_THROTTLE_MS
-#define LOG_MIN_DUAL_MODE_MS      100u
-
 static uint32_t Debug_LogMinInterval(uint32_t default_interval_ms)
 {
     if (CAN_Debug_IsDualModuleEmulationEnabled()) {
-        return LOG_MIN_DUAL_MODE_MS;
+        return CAN_DEBUG_LOG_MIN_DUAL_MODE_MS;
     }
     return default_interval_ms;
 }
@@ -49,7 +44,7 @@ static CAN_DebugState_t s_debug = {0};
 static void Debug_RecordPayload(uint8_t *dst, const uint8_t *src, uint32_t now_ms,
                                 uint32_t *last_ts_ms, uint32_t *interval_ms)
 {
-    memcpy(dst, src, 8U);
+    memcpy(dst, src, CAN_DEBUG_PAYLOAD_LEN_BYTES);
     if (*last_ts_ms != 0U) {
         *interval_ms = now_ms - *last_ts_ms;
     } else {
@@ -249,20 +244,20 @@ void CAN_Debug_UpdateCoreState(uint8_t module_index,
     s_dbg.sensor_fault_mask = CAN_Debug_GetSensorFaultMask();
 }
 
-void CAN_Debug_RecordClaim(const uint8_t payload[8], uint32_t now_ms)
+void CAN_Debug_RecordClaim(const uint8_t payload[CAN_DEBUG_PAYLOAD_LEN_BYTES], uint32_t now_ms)
 {
     Debug_RecordPayload(s_dbg.claim, payload, now_ms,
                        &s_dbg.last_claim_ts_ms, &s_dbg.last_claim_interval_ms);
 }
 
-void CAN_Debug_RecordBms(const uint8_t payload[8], uint32_t now_ms)
+void CAN_Debug_RecordBms(const uint8_t payload[CAN_DEBUG_PAYLOAD_LEN_BYTES], uint32_t now_ms)
 {
     Debug_RecordPayload(s_dbg.bms, payload, now_ms,
                        &s_dbg.last_bms_ts_ms, &s_dbg.last_bms_interval_ms);
     s_dbg.last_bms_checksum = payload[7];
 }
 
-void CAN_Debug_RecordGeneral(const uint8_t payload[8], uint32_t now_ms)
+void CAN_Debug_RecordGeneral(const uint8_t payload[CAN_DEBUG_PAYLOAD_LEN_BYTES], uint32_t now_ms)
 {
     Debug_RecordPayload(s_dbg.general, payload, now_ms,
                        &s_dbg.last_general_ts_ms, &s_dbg.last_general_interval_ms);
@@ -309,11 +304,11 @@ void CAN_Debug_TryLogClaim(void)
     }
 
     const uint32_t now_ms = HAL_GetTick();
-    if ((now_ms - s_log_claim_last_ms) < Debug_LogMinInterval(LOG_MIN_CLAIM_INTERVAL_MS)) {
+    if ((now_ms - s_log_claim_last_ms) < Debug_LogMinInterval(CAN_DEBUG_LOG_THROTTLE_MS)) {
         return;
     }
 
-    const uint32_t claim_id = 0x18EEFF00u | (uint32_t)s_dbg.source_addr;
+    const uint32_t claim_id = THERM_J1939_CLAIM_ID_BASE | (uint32_t)s_dbg.source_addr;
     LOG_PRINT(LOG_TYPE_DEBUG, "\x1b[36mTX 0x%08lX dt=%lums module=%u target=0x%02X [%02X %02X %02X %02X %02X %02X %02X %02X]\x1b[0m",
               (unsigned long)claim_id,
               (unsigned long)s_dbg.last_claim_interval_ms,
@@ -335,11 +330,13 @@ void CAN_Debug_TryLogBms(void)
     }
 
     const uint32_t now_ms = HAL_GetTick();
-    if ((now_ms - s_log_bms_last_ms) < Debug_LogMinInterval(LOG_MIN_BMS_INTERVAL_MS)) {
+    if ((now_ms - s_log_bms_last_ms) < Debug_LogMinInterval(CAN_DEBUG_LOG_THROTTLE_MS)) {
         return;
     }
 
-    const uint32_t bms_id = 0x18390000u | ((uint32_t)s_dbg.bms_target_addr << 8) | (uint32_t)s_dbg.source_addr;
+    const uint32_t bms_id = THERM_BMS_BROADCAST_ID_BASE |
+                            ((uint32_t)s_dbg.bms_target_addr << CAN_SOURCE_ADDR_SHIFT_BITS) |
+                            (uint32_t)s_dbg.source_addr;
     LOG_PRINT(LOG_TYPE_DEBUG, "\x1b[36mTX 0x%08lX bms dt=%lums module=%u low=%d high=%d avg=%d en=%u valid=%u fault=%u hi_id=%u lo_id=%u csum=0x%02X [%02X %02X %02X %02X %02X %02X %02X %02X]\x1b[0m",
               (unsigned long)bms_id,
               (unsigned long)s_dbg.last_bms_interval_ms,
@@ -369,7 +366,7 @@ void CAN_Debug_TryLogGeneral(void)
     }
 
     const uint32_t now_ms = HAL_GetTick();
-    if ((now_ms - s_log_gen_last_ms) < Debug_LogMinInterval(LOG_MIN_GEN_INTERVAL_MS)) {
+    if ((now_ms - s_log_gen_last_ms) < Debug_LogMinInterval(CAN_DEBUG_LOG_THROTTLE_MS)) {
         return;
     }
 
@@ -377,7 +374,9 @@ void CAN_Debug_TryLogGeneral(void)
     const uint8_t idx = s_dbg.last_general_local_id;
     const unsigned fault = (unsigned)((fault_mask & (uint16_t)(1u << idx)) != 0u);
 
-    const uint32_t general_id = 0x18380000u | ((uint32_t)s_dbg.bms_target_addr << 8) | (uint32_t)s_dbg.source_addr;
+    const uint32_t general_id = THERM_GENERAL_BROADCAST_ID_BASE |
+                                ((uint32_t)s_dbg.bms_target_addr << CAN_SOURCE_ADDR_SHIFT_BITS) |
+                                (uint32_t)s_dbg.source_addr;
     LOG_PRINT(LOG_TYPE_DEBUG, "\x1b[36mTX 0x%08lX gen dt=%lums global_id=%u local_id=%u fault=%u temp=%d low=%d high=%d hi_id=%u lo_id=%u [%02X %02X %02X %02X %02X %02X %02X %02X]\x1b[0m",
               (unsigned long)general_id,
               (unsigned long)s_dbg.last_general_interval_ms,
@@ -454,9 +453,13 @@ void CAN_DebugPrintFaultState(void)
 
 void CAN_DebugPrintCanSnapshot(void)
 {
-    const uint32_t claim_id = 0x18EEFF00u | (uint32_t)s_dbg.source_addr;
-    const uint32_t bms_id = 0x18390000u | ((uint32_t)s_dbg.bms_target_addr << 8) | (uint32_t)s_dbg.source_addr;
-    const uint32_t general_id = 0x18380000u | ((uint32_t)s_dbg.bms_target_addr << 8) | (uint32_t)s_dbg.source_addr;
+    const uint32_t claim_id = THERM_J1939_CLAIM_ID_BASE | (uint32_t)s_dbg.source_addr;
+    const uint32_t bms_id = THERM_BMS_BROADCAST_ID_BASE |
+                            ((uint32_t)s_dbg.bms_target_addr << CAN_SOURCE_ADDR_SHIFT_BITS) |
+                            (uint32_t)s_dbg.source_addr;
+    const uint32_t general_id = THERM_GENERAL_BROADCAST_ID_BASE |
+                                ((uint32_t)s_dbg.bms_target_addr << CAN_SOURCE_ADDR_SHIFT_BITS) |
+                                (uint32_t)s_dbg.source_addr;
 
     LOG_PRINT(LOG_TYPE_INFO, "CAN SNAPSHOT (last sent)");
     LOG_PRINT(LOG_TYPE_INFO, "  Claim 0x%08lX interval=%lums source=0x%02X target=0x%02X module=%u [%02X %02X %02X %02X %02X %02X %02X %02X]",

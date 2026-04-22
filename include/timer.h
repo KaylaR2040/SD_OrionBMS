@@ -34,6 +34,18 @@ extern "C" {
 /** Interval definitions */
 #define TIMER_INTERVAL_100MS    100u
 #define TIMER_INTERVAL_200MS    200u
+#define TIMER_INTERVAL_1000MS   1000u
+
+/* --- Shared timer math constants --- */
+#define TIMER_APB_MULTIPLIER_WHEN_PRESCALED 2u
+#define TIMER_LOG_CYCLE_OFFSETS             3u
+#define TIMER_LOG_OFFSET_THERM              0u
+#define TIMER_LOG_OFFSET_VOLT               1u
+#define TIMER_LOG_OFFSET_CAN                2u
+#define TIMER_CAN_EVENT_COUNT_MAX           0xFFu
+#define TIMER_IRQ_PRIORITY                  5u
+#define TIMER_IRQ_SUBPRIORITY               0u
+#define TIMER_VERBOSE_LOGS                  0
 
 #define TIMER5_TARGET_HZ        100000u      /* 10 us tick */
 #define TIMER5_PERIOD_COUNTS    10u          /* ARR+1 counts per tick */
@@ -47,6 +59,7 @@ extern "C" {
 #define TIMER6_PERIOD        100u
 #define TICKS_FOR_100MS     10u
 #define TICKS_FOR_200MS     20u
+#define TICKS_FOR_1000MS    (TIMER_INTERVAL_1000MS / TIMER_BASE_PERIOD_MS)
 
 // Timer7 (CAN dedicated): 10 kHz counter, 100 ms hardware interrupt period
 #define TIMER7_CLK_HZ        10000u

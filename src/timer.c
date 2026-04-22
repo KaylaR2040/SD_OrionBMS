@@ -5,8 +5,6 @@
 
 #include "master.h"
 
-#define TIMER_VERBOSE_LOGS 0
-
 TIM_HandleTypeDef g_htim6;
 TIM_HandleTypeDef g_htim7;
 TIM_HandleTypeDef htim5;
@@ -39,7 +37,6 @@ static volatile uint8_t  s_can_ext_voltage_event_count = 0u;
 /* Logging cycle: 1000ms counter with 3 offset states (0->1->2->0) */
 static volatile uint32_t s_counter_1000ms = 0u;
 static volatile uint8_t  s_log_cycle_offset = 0u;  /* Tracks which 1-second offset we're in (0, 1, or 2) */
-#define TICKS_FOR_1000MS  100u  /* 10ms * 100 = 1000ms */
 
 static uint32_t Timer_LockIrq_(void)
 {
@@ -70,7 +67,7 @@ void Timer5_Init(void)
     /* Timer clock (APB1): account for x2 when prescaler != 1 */
     uint32_t timer_clk = HAL_RCC_GetPCLK1Freq();
     if ((RCC->CFGR & RCC_CFGR_PPRE1) != RCC_CFGR_PPRE1_DIV1) {
-        timer_clk *= 2u;
+        timer_clk *= TIMER_APB_MULTIPLIER_WHEN_PRESCALED;
     }
 
     uint32_t prescaler = (timer_clk / (TIMER5_TARGET_HZ * TIMER5_PERIOD_COUNTS)) - 1u;
@@ -83,7 +80,7 @@ void Timer5_Init(void)
     htim5.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
 
     HAL_TIM_Base_Init(&htim5);
-    HAL_NVIC_SetPriority(TIM5_IRQn, 5, 0);
+    HAL_NVIC_SetPriority(TIM5_IRQn, TIMER_IRQ_PRIORITY, TIMER_IRQ_SUBPRIORITY);
     HAL_NVIC_EnableIRQ(TIM5_IRQn);
 }
 
@@ -96,7 +93,7 @@ void Timer6_Init(void)
     /* Get the actual APB1 timer clock (may be x2 PCLK1 if APB1_DIV > 1) */
     uint32_t timer_clk = HAL_RCC_GetPCLK1Freq();
     if ((RCC->CFGR & RCC_CFGR_PPRE1) != RCC_CFGR_PPRE1_DIV1) {
-        timer_clk *= 2u;  /* Timers get x2 when APB prescaler > 1 */
+        timer_clk *= TIMER_APB_MULTIPLIER_WHEN_PRESCALED;  /* Timers get x2 when APB prescaler > 1 */
     }
 
     uint32_t prescaler = (timer_clk / TIMER6_CLK_HZ) - 1u;
@@ -124,7 +121,7 @@ void Timer6_Init(void)
     g_htim6.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
 
     HAL_TIM_Base_Init(&g_htim6);
-    HAL_NVIC_SetPriority(TIM6_DAC_IRQn, 5, 0);
+    HAL_NVIC_SetPriority(TIM6_DAC_IRQn, TIMER_IRQ_PRIORITY, TIMER_IRQ_SUBPRIORITY);
     HAL_NVIC_EnableIRQ(TIM6_DAC_IRQn);
     HAL_TIM_Base_Start_IT(&g_htim6);
 }
@@ -137,7 +134,7 @@ void Timer7_Init(void)
     /* Use same APB1 timer clock as TIM6 */
     uint32_t timer_clk = HAL_RCC_GetPCLK1Freq();
     if ((RCC->CFGR & RCC_CFGR_PPRE1) != RCC_CFGR_PPRE1_DIV1) {
-        timer_clk *= 2u;
+        timer_clk *= TIMER_APB_MULTIPLIER_WHEN_PRESCALED;
     }
 
     uint32_t prescaler = (timer_clk / TIMER7_CLK_HZ) - 1u;
@@ -161,7 +158,7 @@ void Timer7_Init(void)
     g_htim7.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
 
     HAL_TIM_Base_Init(&g_htim7);
-    HAL_NVIC_SetPriority(TIM7_DAC_IRQn, 5, 0);
+    HAL_NVIC_SetPriority(TIM7_DAC_IRQn, TIMER_IRQ_PRIORITY, TIMER_IRQ_SUBPRIORITY);
     HAL_NVIC_EnableIRQ(TIM7_DAC_IRQn);
     HAL_TIM_Base_Start_IT(&g_htim7);
 }
@@ -189,15 +186,15 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
         if (s_counter_1000ms >= TICKS_FOR_1000MS) {
             s_counter_1000ms = 0u;
             /* Set flag based on current offset in the 3-second cycle */
-            if (s_log_cycle_offset == 0u) {
+            if (s_log_cycle_offset == TIMER_LOG_OFFSET_THERM) {
                 g_flag_log_1s_offset0 = true;  /* Therm logs */
-            } else if (s_log_cycle_offset == 1u) {
+            } else if (s_log_cycle_offset == TIMER_LOG_OFFSET_VOLT) {
                 g_flag_log_1s_offset1 = true;  /* Volt logs */
-            } else if (s_log_cycle_offset == 2u) {
+            } else if (s_log_cycle_offset == TIMER_LOG_OFFSET_CAN) {
                 g_flag_log_1s_offset2 = true;  /* CAN logs */
             }
             /* Advance to next offset in the 3-second cycle */
-            s_log_cycle_offset = (s_log_cycle_offset + 1u) % 3u;
+            s_log_cycle_offset = (s_log_cycle_offset + 1u) % TIMER_LOG_CYCLE_OFFSETS;
         }
     }
 
@@ -218,7 +215,7 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
         s_can_counter_1000ms++;
         if (s_can_counter_1000ms >= CAN_TICKS_FOR_1000MS) {
             s_can_counter_1000ms = 0u;
-            if (s_can_ext_voltage_event_count < 0xFFu) {
+            if (s_can_ext_voltage_event_count < TIMER_CAN_EVENT_COUNT_MAX) {
                 s_can_ext_voltage_event_count++;
             }
         }
@@ -366,12 +363,13 @@ void Timer5_DisarmWake(void)
 void Timer_DebugPrintCounters(void)
 {
     LOG_PRINT(LOG_TYPE_INFO, "TIM6 Counter State:");
-    LOG_PRINT(LOG_TYPE_INFO, "  TIM6->CNT = %u (raw counter, should cycle 0-99)", __HAL_TIM_GET_COUNTER(&g_htim6));
+    LOG_PRINT(LOG_TYPE_INFO, "  TIM6->CNT = %u (raw counter, should cycle 0-%u)",
+             __HAL_TIM_GET_COUNTER(&g_htim6), (unsigned)(TIMER6_PERIOD - 1u));
     LOG_PRINT(LOG_TYPE_INFO, "  s_isr_call_count = %lu (total TIM6 ISR calls since boot)", (unsigned long)s_isr_call_count);
-    LOG_PRINT(LOG_TYPE_INFO, "  s_counter_100ms = %u (should be 0-9)", s_counter_100ms);
-    LOG_PRINT(LOG_TYPE_INFO, "  s_counter_200ms = %u (should be 0-19)", s_counter_200ms);
-    LOG_PRINT(LOG_TYPE_INFO, "  g_flag_100ms = %u (set by ISR when counter hits 10)", g_flag_100ms);
-    LOG_PRINT(LOG_TYPE_INFO, "  g_flag_200ms = %u (set by ISR when counter hits 20)", g_flag_200ms);
+    LOG_PRINT(LOG_TYPE_INFO, "  s_counter_100ms = %u (should be 0-%u)", s_counter_100ms, (unsigned)(TICKS_FOR_100MS - 1u));
+    LOG_PRINT(LOG_TYPE_INFO, "  s_counter_200ms = %u (should be 0-%u)", s_counter_200ms, (unsigned)(TICKS_FOR_200MS - 1u));
+    LOG_PRINT(LOG_TYPE_INFO, "  g_flag_100ms = %u (set by ISR when counter hits %u)", g_flag_100ms, (unsigned)TICKS_FOR_100MS);
+    LOG_PRINT(LOG_TYPE_INFO, "  g_flag_200ms = %u (set by ISR when counter hits %u)", g_flag_200ms, (unsigned)TICKS_FOR_200MS);
     LOG_PRINT(LOG_TYPE_INFO, "Expected: TIM6 fires every 10ms, so ~10 calls per 100ms, ~20 calls per 200ms");
 }
 

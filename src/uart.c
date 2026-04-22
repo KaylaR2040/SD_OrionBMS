@@ -42,7 +42,7 @@ void UART_Stlink_Init(void)
 
     /* Logging UART is USART2 => PA2/PA3 (AF7) per HAL_UART_MspInit. */
     uart_stlink.Instance = USART2;
-    uart_stlink.Init.BaudRate = 115200;
+    uart_stlink.Init.BaudRate = UART_STLINK_BAUDRATE;
     uart_stlink.Init.WordLength = UART_WORDLENGTH_8B;
     uart_stlink.Init.StopBits = UART_STOPBITS_1;
     uart_stlink.Init.Parity = UART_PARITY_NONE;
@@ -135,14 +135,14 @@ static void Log_VPrint(log_type_t type, const char *fmt, va_list ap, bool parse_
     }
 
     /* Render the formatted message into a local buffer. */
-    char line[256];
+    char line[LOG_LINE_BUFFER_SIZE];
     int len = vsnprintf(line, sizeof(line), format, format_args);
     va_end(format_args);
     if (len < 0) {
         return;
     }
     if ((size_t)len >= sizeof(line)) {
-        len = (int)sizeof(line) - 1;
+        len = (int)LOG_LINE_BUFFER_SIZE - 1;
     }
 
     /* Prefix with type tag + color for clarity on the console. */
@@ -170,12 +170,12 @@ static void Log_VPrint(log_type_t type, const char *fmt, va_list ap, bool parse_
         /* Drop trailing empty segment when format string ends with '\n'. */
         if (!(at_end && part_len == 0U)) {
             const uint8_t line_start = '\r';
-            HAL_UART_Transmit(log_uart, (uint8_t *)&line_start, 1, HAL_MAX_DELAY);
+            HAL_UART_Transmit(log_uart, (uint8_t *)&line_start, LOG_SINGLE_CHAR_LEN, HAL_MAX_DELAY);
 
             if (type != LOG_TYPE_NONE) {
                 HAL_UART_Transmit(log_uart, (uint8_t *)type_color, (uint16_t)strlen(type_color), HAL_MAX_DELAY);
                 HAL_UART_Transmit(log_uart, (uint8_t *)tag, (uint16_t)strlen(tag), HAL_MAX_DELAY);
-                HAL_UART_Transmit(log_uart, (uint8_t *)" ", 1, HAL_MAX_DELAY);
+                HAL_UART_Transmit(log_uart, (uint8_t *)" ", LOG_SINGLE_CHAR_LEN, HAL_MAX_DELAY);
                 HAL_UART_Transmit(log_uart, (uint8_t *)RESET, (uint16_t)strlen(RESET), HAL_MAX_DELAY);
             }
 
@@ -185,8 +185,8 @@ static void Log_VPrint(log_type_t type, const char *fmt, va_list ap, bool parse_
             }
             HAL_UART_Transmit(log_uart, (uint8_t *)RESET, (uint16_t)strlen(RESET), HAL_MAX_DELAY);
 
-            const uint8_t line_end[2] = {'\r', '\n'};
-            HAL_UART_Transmit(log_uart, line_end, 2, HAL_MAX_DELAY);
+            const uint8_t line_end[LOG_CRLF_LEN] = {'\r', '\n'};
+            HAL_UART_Transmit(log_uart, line_end, LOG_CRLF_LEN, HAL_MAX_DELAY);
         }
 
         start = i + 1U;

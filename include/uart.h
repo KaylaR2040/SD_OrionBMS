@@ -36,6 +36,12 @@ extern UART_HandleTypeDef uart_stlink;
 /* BQ79616 transport UART (USART1) */
 extern UART_HandleTypeDef uart_bq79616;
 
+/* --- UART and logging constants --- */
+#define UART_STLINK_BAUDRATE    115200U
+#define LOG_LINE_BUFFER_SIZE    256U
+#define LOG_CRLF_LEN            2U
+#define LOG_SINGLE_CHAR_LEN     1U
+
 typedef enum {
     LOG_TYPE_NONE = 0,
     LOG_TYPE_INFO,
