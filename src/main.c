@@ -23,7 +23,7 @@ volatile bool therm_status = ACTIVE;
 volatile bool volt_status = ACTIVE;
 
 /* Set to 1 to force BQ into SHUTDOWN from main loop. */
-volatile bool bq_shutdown_status = BQ_TURN_ON;
+volatile bool bq_shutdown_status = BQ_TURN_OFF;
 
 /* USER CODE BEGIN (2) */
 int UART_RX_RDY = 0;
