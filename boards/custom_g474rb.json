@@ -1,0 +1,40 @@
+{
+  "build": {
+    "core": "stm32",
+    "cpu": "cortex-m4",
+    "extra_flags": "-DSTM32G4 -DSTM32G4xx -DSTM32G474xx",
+    "f_cpu": "170000000L",
+    "ldscript": "STM32G474RBTX_FLASH.ld",
+    "mcu": "stm32g474rbt6",
+    "product_line": "STM32G474xx",
+    "variant": "STM32G4xx/G473R(B-C)T_G473RETx(Z)_G474R(B-C-E)T_G483RET_G484RET"
+  },
+  "connectivity": [
+    "can"
+  ],
+  "debug": {
+    "default_tools": [
+      "stlink"
+    ],
+    "jlink_device": "STM32G474RB",
+    "openocd_target": "stm32g4x",
+    "svd_path": "STM32G474xx.svd"
+  },
+  "frameworks": [
+    "stm32cube"
+  ],
+  "name": "Custom STM32G474RB Board",
+  "upload": {
+    "maximum_ram_size": 131072,
+    "maximum_size": 131072,
+    "protocol": "stlink",
+    "protocols": [
+      "stlink",
+      "jlink",
+      "cmsis-dap",
+      "blackmagic"
+    ]
+  },
+  "url": "",
+  "vendor": "Custom"
+}

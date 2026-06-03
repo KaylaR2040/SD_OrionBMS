@@ -8,3 +8,8 @@ out/
 
 # IDE files
 .vscode/
+
+*.pyc
+__pycache__/
+.project
+.claude/
